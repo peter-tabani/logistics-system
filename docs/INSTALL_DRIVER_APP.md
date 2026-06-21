@@ -84,6 +84,14 @@ Then refresh the download copy:
 Copy-Item driver_app\build\app\outputs\flutter-apk\app-release.apk website\downloads\stan-driver.apk -Force
 ```
 
+### Optional: enable Google Maps
+
+By default the app uses the free OpenStreetMap layer. To switch to Google Maps
+(better Nairobi detail + road-following routes), add your key in
+`android/local.properties` (`MAPS_API_KEY=...`) and add
+`--dart-define=GOOGLE_MAPS_API_KEY=...` to the build command. Full steps:
+`docs/GOOGLE_MAPS_SETUP.md`.
+
 ---
 
 ## 5. Signing note
