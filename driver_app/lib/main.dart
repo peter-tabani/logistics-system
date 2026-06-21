@@ -1902,137 +1902,377 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     );
   }
 
+  String _trackingCode(int deliveryId) {
+    return 'STAN-${deliveryId.toString().padLeft(5, '0')}';
+  }
+
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'assigned':
+        return const Color(0xFFF59E0B);
+      case 'picked_up':
+        return const Color(0xFF2563EB);
+      case 'in_transit':
+        return const Color(0xFF16A34A);
+      case 'delivered':
+        return const Color(0xFF64748B);
+      default:
+        return stanMuted;
+    }
+  }
+
   Widget _buildInProgressCarousel(List<Map<String, dynamic>> activeDeliveries) {
-    final items = activeDeliveries.isEmpty
-        ? <Map<String, dynamic>>[
-            {
-              'id': 0,
-              'customerName': 'Parcel waiting dispatch',
-              'pickupAddress': 'Dispatch will assign your next pickup',
-              'dropoffAddress': 'You can still browse Stan from the tabs',
-              'status': 'ready',
-            },
-          ]
-        : activeDeliveries;
+    if (activeDeliveries.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: _buildEmptyTrackingCard(),
+      );
+    }
+
+    final cardWidth = MediaQuery.of(context).size.width *
+        (activeDeliveries.length > 1 ? 0.86 : 1) -
+        (activeDeliveries.length > 1 ? 0 : 48);
 
     return SizedBox(
-      height: 164,
+      height: 188,
       child: ListView.separated(
         padding: const EdgeInsets.symmetric(horizontal: 24),
         scrollDirection: Axis.horizontal,
-        itemCount: items.length,
+        itemCount: activeDeliveries.length,
         separatorBuilder: (_, _) => const SizedBox(width: 16),
         itemBuilder: (context, index) {
-          final delivery = items[index];
-          return _buildProgressCard(delivery, delivery['id'] != 0);
+          return SizedBox(
+            width: cardWidth,
+            child: _buildTrackingCard(activeDeliveries[index]),
+          );
         },
       ),
     );
   }
 
-  Widget _buildProgressCard(Map<String, dynamic> delivery, bool canOpen) {
+  Widget _buildTrackingCard(Map<String, dynamic> delivery) {
     final deliveryId = delivery['id'] as int;
+    final status = delivery['status'] as String;
+    final dropoffAddress = delivery['dropoffAddress'] as String;
 
     return InkWell(
-      onTap: canOpen
-          ? () {
-              setState(() {
-                _selectedDeliveryId = deliveryId;
-              });
-              unawaited(_startTracking());
-            }
-          : null,
-      borderRadius: BorderRadius.circular(18),
+      onTap: () {
+        setState(() {
+          _selectedDeliveryId = deliveryId;
+        });
+        unawaited(_startTracking());
+      },
+      borderRadius: BorderRadius.circular(22),
       child: Container(
-        width: 276,
-        padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(22),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 20,
-              offset: const Offset(0, 10),
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 24,
+              offset: const Offset(0, 12),
             ),
           ],
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        clipBehavior: Clip.antiAlias,
+        child: Row(
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    delivery['customerName'] as String,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: stanDark,
-                      fontWeight: FontWeight.w900,
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 16, 12, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text(
+                      'Current Tracking',
+                      style: TextStyle(
+                        color: stanMuted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.6,
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _trackingCode(deliveryId),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: stanDark,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.4,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildTrackingDetail(
+                      icon: Icons.location_on,
+                      iconColor: const Color(0xFFDC2626),
+                      label: 'Destination',
+                      value: dropoffAddress,
+                    ),
+                    const SizedBox(height: 12),
+                    _buildTrackingDetail(
+                      icon: Icons.circle,
+                      iconColor: _statusColor(status),
+                      label: 'Status',
+                      value: formatDeliveryStatus(status),
+                      iconSize: 11,
+                    ),
+                  ],
                 ),
-                if (canOpen) _buildStatusPill(delivery['status'] as String),
-              ],
+              ),
             ),
-            const SizedBox(height: 18),
-            _buildTinyRouteLine(
-              delivery['pickupAddress'] as String,
-              canOpen ? 'Today, 09:00' : 'Waiting',
-            ),
-            const SizedBox(height: 15),
-            _buildTinyRouteLine(
-              delivery['dropoffAddress'] as String,
-              canOpen ? 'Next stop' : 'Standby',
-            ),
+            _buildMiniMap(delivery),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildTinyRouteLine(String address, String time) {
+  Widget _buildTrackingDetail({
+    required IconData icon,
+    required Color iconColor,
+    required String label,
+    required String value,
+    double iconSize = 16,
+  }) {
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          width: 9,
-          height: 9,
-          margin: const EdgeInsets.only(top: 4),
+          width: 30,
+          height: 30,
           decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: const Color(0xFF6B7B86), width: 2),
+            color: iconColor.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(10),
           ),
+          child: Icon(icon, color: iconColor, size: iconSize),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 10),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                address,
+                label,
+                style: const TextStyle(
+                  color: stanMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 1),
+              Text(
+                value,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  color: Color(0xFF6B7B86),
-                  fontSize: 12,
+                  color: stanDark,
+                  fontSize: 13.5,
                   fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                time,
-                style: const TextStyle(
-                  color: Color(0xFFB2BCC2),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
                 ),
               ),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildMiniMap(Map<String, dynamic> delivery) {
+    final pickupPoint = _pickupPoint(delivery);
+    final dropoffPoint = _dropoffPoint(delivery);
+    final driverPoint = _lastPosition == null
+        ? null
+        : LatLng(_lastPosition!.latitude, _lastPosition!.longitude);
+
+    final routePoints = <LatLng>[
+      ?pickupPoint,
+      ?driverPoint,
+      ?dropoffPoint,
+    ];
+
+    final boundsPoints = routePoints.isNotEmpty
+        ? routePoints
+        : <LatLng>[defaultMapCenter];
+
+    return SizedBox(
+      width: 124,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          IgnorePointer(
+            child: FlutterMap(
+              options: MapOptions(
+                initialCameraFit: boundsPoints.length > 1
+                    ? CameraFit.bounds(
+                        bounds: LatLngBounds.fromPoints(boundsPoints),
+                        padding: const EdgeInsets.all(26),
+                      )
+                    : null,
+                initialCenter: boundsPoints.first,
+                initialZoom: 12.5,
+                interactionOptions: const InteractionOptions(
+                  flags: InteractiveFlag.none,
+                ),
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate:
+                      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.example.driver_app',
+                ),
+                if (routePoints.length > 1)
+                  PolylineLayer(
+                    polylines: [
+                      Polyline(
+                        points: routePoints,
+                        color: const Color(0xFFF97316),
+                        strokeWidth: 4,
+                      ),
+                    ],
+                  ),
+                MarkerLayer(
+                  markers: [
+                    if (pickupPoint != null)
+                      Marker(
+                        point: pickupPoint,
+                        width: 16,
+                        height: 16,
+                        child: _buildMiniDot(const Color(0xFF16A34A)),
+                      ),
+                    if (dropoffPoint != null)
+                      Marker(
+                        point: dropoffPoint,
+                        width: 16,
+                        height: 16,
+                        child: _buildMiniDot(const Color(0xFFDC2626)),
+                      ),
+                    if (driverPoint != null)
+                      Marker(
+                        point: driverPoint,
+                        width: 22,
+                        height: 22,
+                        child: _buildMiniDot(
+                          const Color(0xFFF97316),
+                          glow: true,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          // Subtle gradient to blend the map into the card edge.
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: 24,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: [
+                    Colors.white,
+                    Colors.white.withValues(alpha: 0),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMiniDot(Color color, {bool glow = false}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 2.5),
+        boxShadow: glow
+            ? [
+                BoxShadow(
+                  color: color.withValues(alpha: 0.55),
+                  blurRadius: 10,
+                  spreadRadius: 1,
+                ),
+              ]
+            : const [
+                BoxShadow(
+                  color: Colors.black26,
+                  blurRadius: 4,
+                  offset: Offset(0, 2),
+                ),
+              ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyTrackingCard() {
+    return Container(
+      height: 150,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: stanDark,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: const Icon(
+              Icons.local_shipping_outlined,
+              color: Colors.white,
+              size: 26,
+            ),
+          ),
+          const SizedBox(width: 16),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  'No active delivery',
+                  style: TextStyle(
+                    color: stanDark,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'Dispatch will assign your next pickup. Pull down to refresh.',
+                  style: TextStyle(
+                    color: stanMuted,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
