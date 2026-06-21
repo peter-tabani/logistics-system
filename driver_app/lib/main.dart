@@ -1731,11 +1731,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         ],
       ),
       clipBehavior: Clip.antiAlias,
-      child: Image.network(
-        'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=160&q=80',
-        fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => _buildAvatarFallback(size),
-      ),
+      child: _buildAvatarFallback(size),
     );
   }
 
