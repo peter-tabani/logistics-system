@@ -2470,22 +2470,152 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   Widget _buildMessagesPage(BuildContext context) {
+    final activeDeliveries = _activeDeliveries;
+    final hasActive = activeDeliveries.isNotEmpty;
+    final activeCustomer = hasActive
+        ? activeDeliveries.first['customerName'] as String
+        : 'your next pickup';
+
     return _buildTabPage(
       title: 'Messages',
-      subtitle: 'Dispatcher updates and support will appear here.',
+      subtitle: 'Dispatcher updates and customer notes.',
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _buildInfoPanel(
-            Icons.support_agent,
-            'Dispatch channel ready',
-            'For the demo, this tab shows drivers are not trapped on one screen. We can connect real chat in a later phase.',
+          _buildMessageItem(
+            initials: 'OP',
+            color: const Color(0xFF2563EB),
+            name: 'Stan Dispatch',
+            preview: hasActive
+                ? 'You\'re assigned to $activeCustomer. Drive safe!'
+                : 'No active job right now — stay online for the next one.',
+            time: 'now',
+            unread: hasActive,
           ),
-          const SizedBox(height: 16),
-          _buildInfoPanel(
-            Icons.notifications_active_outlined,
-            'Notifications enabled in design',
-            'Pickup alerts, route changes, and customer messages can land here.',
+          _buildMessageItem(
+            initials: 'RT',
+            color: const Color(0xFF16A34A),
+            name: 'Route Assistant',
+            preview: 'Live GPS is shared with the owner while a delivery is active.',
+            time: '2m',
+            unread: false,
           ),
+          _buildMessageItem(
+            initials: 'CS',
+            color: const Color(0xFFF59E0B),
+            name: 'Customer Support',
+            preview: 'Tap here if a customer is unreachable at the dropoff.',
+            time: '1h',
+            unread: false,
+          ),
+          const SizedBox(height: 8),
+          _buildInfoPanel(
+            Icons.lock_outline_rounded,
+            'Two-way chat coming soon',
+            'This demo shows where dispatcher, route, and customer messages live. Real-time chat connects in a later phase.',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMessageItem({
+    required String initials,
+    required Color color,
+    required String name,
+    required String preview,
+    required String time,
+    required bool unread,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: const [
+          BoxShadow(
+            blurRadius: 18,
+            color: Color(0x0D000000),
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: Center(
+              child: Text(
+                initials,
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        name,
+                        style: const TextStyle(
+                          color: stanDark,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      time,
+                      style: const TextStyle(
+                        color: stanMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  preview,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF60727A),
+                    fontSize: 13,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (unread) ...[
+            const SizedBox(width: 10),
+            Container(
+              width: 9,
+              height: 9,
+              margin: const EdgeInsets.only(top: 6),
+              decoration: const BoxDecoration(
+                color: Color(0xFF2563EB),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -2535,22 +2665,203 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             ),
           ),
           const SizedBox(height: 16),
-          _buildInfoPanel(
-            Icons.two_wheeler,
-            'Vehicle options',
-            'Motorbike, car, and truck flows are represented on the home screen.',
+          Row(
+            children: [
+              Expanded(
+                child: _buildStatTile(
+                  '${_activeDeliveries.length}',
+                  'Active',
+                  Icons.local_shipping_outlined,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildStatTile(
+                  '${_deliveries.where((d) => d['status'] == 'delivered').length}',
+                  'Delivered',
+                  Icons.check_circle_outline,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildStatTile(
+                  _isTracking ? 'On' : 'Off',
+                  'GPS',
+                  Icons.gps_fixed,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
-          _buildInfoPanel(
-            Icons.location_on_outlined,
-            _isTracking ? 'Tracking is live' : 'Tracking is off',
-            _lastPosition == null
-                ? 'Open a shipment map or send location to update GPS.'
-                : 'Last position captured and ready for dispatch visibility.',
+          const SizedBox(height: 20),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: const [
+                BoxShadow(
+                  blurRadius: 18,
+                  color: Color(0x0D000000),
+                  offset: Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                _buildMenuRow(
+                  Icons.directions_car_outlined,
+                  'Vehicle',
+                  'Bike • Car • Truck',
+                ),
+                _buildMenuDivider(),
+                _buildMenuRow(
+                  Icons.notifications_none_rounded,
+                  'Notifications',
+                  'Pickup alerts and route changes',
+                ),
+                _buildMenuDivider(),
+                _buildMenuRow(
+                  Icons.location_on_outlined,
+                  'Tracking',
+                  _isTracking ? 'Live — sharing GPS' : 'Off — open a shipment to start',
+                ),
+                _buildMenuDivider(),
+                _buildMenuRow(
+                  Icons.help_outline_rounded,
+                  'Help & support',
+                  'Contact Stan dispatch',
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          OutlinedButton.icon(
+            onPressed: _signOut,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFFDC2626),
+              side: const BorderSide(color: Color(0xFFF1C7C7)),
+              padding: const EdgeInsets.symmetric(vertical: 15),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+            icon: const Icon(Icons.logout_rounded, size: 18),
+            label: const Text(
+              'Sign out',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  void _signOut() {
+    _stopTrackingTimerOnly();
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
+  }
+
+  void _stopTrackingTimerOnly() {
+    _trackingTimer?.cancel();
+    _trackingTimer = null;
+  }
+
+  Widget _buildStatTile(String value, String label, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: const [
+          BoxShadow(
+            blurRadius: 16,
+            color: Color(0x0D000000),
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: stanDark, size: 22),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: const TextStyle(
+              color: stanDark,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: const TextStyle(
+              color: stanMuted,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildMenuRow(IconData icon, String title, String subtitle) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: stanSurface,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, color: stanDark, size: 20),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: stanDark,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: stanMuted,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Icon(
+            Icons.chevron_right_rounded,
+            color: Color(0xFFB4BDC3),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMenuDivider() {
+    return const Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F8));
   }
 
   Widget _buildTabPage({
@@ -2687,7 +2998,26 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     );
   }
 
+  int _statusStep(String status) {
+    switch (status) {
+      case 'assigned':
+        return 1;
+      case 'picked_up':
+        return 2;
+      case 'in_transit':
+        return 3;
+      case 'delivered':
+        return 4;
+      default:
+        return 0;
+    }
+  }
+
   Widget _buildAssignmentCard(Map<String, dynamic> delivery) {
+    final deliveryId = delivery['id'] as int;
+    final status = delivery['status'] as String;
+    final isDelivered = status == 'delivered';
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(20),
@@ -2706,35 +3036,203 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: Text(
-                  delivery['customerName'] as String,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      delivery['customerName'] as String,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _trackingCode(deliveryId),
+                      style: const TextStyle(
+                        color: stanMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              _buildStatusPill(delivery['status'] as String),
+              _buildStatusPill(status),
             ],
           ),
-          const SizedBox(height: 16),
-          _buildAddressRow(Icons.radio_button_checked, 'Pickup', delivery),
-          const SizedBox(height: 12),
-          _buildAddressRow(Icons.location_on, 'Dropoff', delivery),
-          const SizedBox(height: 20),
-          FilledButton(
-            onPressed: () {
-              setState(() {
-                _selectedDeliveryId = delivery['id'] as int;
-              });
-              unawaited(_startTracking());
-            },
-            child: const Text('Open pickup map'),
+          const SizedBox(height: 18),
+          _buildRouteConnector(delivery),
+          const SizedBox(height: 18),
+          _buildMiniStepper(status),
+          const SizedBox(height: 18),
+          if (isDelivered)
+            _buildDeliveredFooter()
+          else
+            FilledButton(
+              onPressed: () {
+                setState(() {
+                  _selectedDeliveryId = deliveryId;
+                });
+                unawaited(_startTracking());
+              },
+              child: Text(
+                status == 'assigned' ? 'Open pickup map' : 'Open live map',
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeliveredFooter() {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: const Color(0xFF16A34A).withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: const Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.check_circle, color: Color(0xFF16A34A), size: 18),
+          SizedBox(width: 8),
+          Text(
+            'Delivered',
+            style: TextStyle(
+              color: Color(0xFF15803D),
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.3,
+            ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildRouteConnector(Map<String, dynamic> delivery) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Column(
+          children: [
+            const SizedBox(height: 3),
+            _routeDot(const Color(0xFF16A34A)),
+            Container(
+              width: 2,
+              height: 30,
+              margin: const EdgeInsets.symmetric(vertical: 2),
+              color: const Color(0xFFE2E8F0),
+            ),
+            _routeDot(const Color(0xFFDC2626)),
+          ],
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildRouteEndpoint('Pickup', delivery['pickupAddress'] as String),
+              const SizedBox(height: 18),
+              _buildRouteEndpoint(
+                'Dropoff',
+                delivery['dropoffAddress'] as String,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _routeDot(Color color) {
+    return Container(
+      width: 12,
+      height: 12,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.18),
+        shape: BoxShape.circle,
+      ),
+      child: Center(
+        child: Container(
+          width: 6,
+          height: 6,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRouteEndpoint(String label, String address) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: stanMuted,
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.3,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          address,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: stanDark,
+            fontSize: 14.5,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMiniStepper(String status) {
+    final step = _statusStep(status);
+    const labels = ['Assigned', 'Picked up', 'In transit', 'Delivered'];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            for (var i = 1; i <= 4; i++) ...[
+              Expanded(
+                child: Container(
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: i <= step
+                        ? stanDark
+                        : const Color(0xFFE2E8F0),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ),
+              if (i < 4) const SizedBox(width: 5),
+            ],
+          ],
+        ),
+        const SizedBox(height: 7),
+        Text(
+          step >= 1 && step <= 4 ? labels[step - 1] : 'Pending',
+          style: const TextStyle(
+            color: stanDark,
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
     );
   }
 
@@ -2763,11 +3261,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           style: TextStyle(color: Color(0xFF6B7280), height: 1.4),
         ),
         const SizedBox(height: 20),
-        _buildStatusPill(delivery['status'] as String),
+        _buildMiniStepper(delivery['status'] as String),
         const SizedBox(height: 20),
-        _buildAddressRow(Icons.radio_button_checked, 'Pickup', delivery),
-        const SizedBox(height: 16),
-        _buildAddressRow(Icons.location_on, 'Dropoff', delivery),
+        _buildRouteConnector(delivery),
         if (_statusMessage != null) ...[
           const SizedBox(height: 16),
           Text(_statusMessage!),
@@ -2830,10 +3326,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             _buildStatusPill(status),
             const SizedBox(width: 8),
             _buildLivePill(),
+            const Spacer(),
+            _buildDistanceChip(delivery),
           ],
         ),
         const SizedBox(height: 20),
-        _buildAddressRow(Icons.location_on, 'Dropoff', delivery),
+        _buildMiniStepper(status),
+        const SizedBox(height: 20),
+        _buildRouteConnector(delivery),
         if (_statusMessage != null) ...[
           const SizedBox(height: 16),
           Text(_statusMessage!),
@@ -2870,22 +3370,47 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   Widget _buildCompletedStep(BuildContext context) {
+    final delivery = _selectedDelivery;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildStepLabel('Done'),
-        const SizedBox(height: 8),
-        Text(
-          'Delivery completed',
-          style: Theme.of(
-            context,
-          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+        Center(
+          child: Container(
+            width: 76,
+            height: 76,
+            decoration: BoxDecoration(
+              color: const Color(0xFF16A34A).withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.check_rounded,
+              color: Color(0xFF16A34A),
+              size: 42,
+            ),
+          ),
+        ),
+        const SizedBox(height: 18),
+        Center(
+          child: Text(
+            'Delivery completed',
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+          ),
         ),
         const SizedBox(height: 8),
         const Text(
           'The owner can now see this job as delivered. Return to your assignments for the next delivery.',
+          textAlign: TextAlign.center,
           style: TextStyle(color: Color(0xFF6B7280), height: 1.4),
         ),
+        if (delivery != null) ...[
+          const SizedBox(height: 22),
+          _buildMiniStepper('delivered'),
+          const SizedBox(height: 18),
+          _buildRouteConnector(delivery),
+        ],
         const SizedBox(height: 24),
         FilledButton(
           onPressed: () {
@@ -2899,45 +3424,42 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     );
   }
 
-  Widget _buildAddressRow(
-    IconData icon,
-    String label,
-    Map<String, dynamic> delivery,
-  ) {
-    final address = label == 'Pickup'
-        ? delivery['pickupAddress'] as String
-        : delivery['dropoffAddress'] as String;
+  Widget _buildDistanceChip(Map<String, dynamic> delivery) {
+    final dropoffPoint = _dropoffPoint(delivery);
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 20, color: const Color(0xFF111827)),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Color(0xFF6B7280),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                address,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  height: 1.3,
-                ),
-              ),
-            ],
+    if (_lastPosition == null || dropoffPoint == null) {
+      return const SizedBox.shrink();
+    }
+
+    final meters = calculateDistanceMeters(
+      LatLng(_lastPosition!.latitude, _lastPosition!.longitude),
+      dropoffPoint,
+    );
+    final label = meters >= 1000
+        ? '${(meters / 1000).toStringAsFixed(1)} km'
+        : '${meters.round()} m';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: stanDark,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.navigation_rounded, color: Colors.white, size: 13),
+          const SizedBox(width: 5),
+          Text(
+            '$label to go',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
