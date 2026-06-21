@@ -1,0 +1,67 @@
+# Needs From Owner
+
+Things I could **not** do safely on my own (they need a password, a real device,
+a live account, or a decision only you can make). Everything else in the
+demo-prep build is done and validated.
+
+---
+
+## 1. Real-phone API URL for the distributable APK  ·  BLOCKER for real-phone demo
+
+The driver app's backend URL is fixed **when the APK is built**. The APK I built
+and put on the download page targets the **Android emulator** (`http://10.0.2.2:5000`),
+which will **not** work on a physical phone.
+
+**What I need:** confirm how the phone will reach the backend during the demo:
+- Same Wi-Fi as the PC → give me the PC's Wi-Fi IPv4 (e.g. `192.168.0.104`), **or**
+- A public/hosted backend URL if the backend will be deployed.
+
+I'll then rebuild with:
+```powershell
+flutter build apk --release --dart-define=API_BASE_URL=http://<THAT_URL>:5000
+```
+(Command and copy step are in `docs/INSTALL_DRIVER_APP.md`.)
+
+---
+
+## 2. Release signing keystore  ·  needed only for Google Play, not for the demo
+
+The release APK is currently signed with the **debug key**. That's fine for
+sideloading and the pilot demo, but **Google Play** requires a real upload
+keystore.
+
+**What I need (only if/when you want to publish to Play):**
+- A keystore file + its passwords, **or** permission for you to generate one
+  yourself (it must never be committed to git or shared in chat).
+
+I will not create, store, or commit any keystore or password.
+
+---
+
+## 3. Public website hosting  ·  needed only to share the download page online
+
+The download page is built and works locally at `website/index.html` with the
+APK at `website/downloads/stan-driver.apk`. To make it a real public link
+(e.g. `download.stan.co.ke`), it needs to be hosted.
+
+**What I need (if you want it public):**
+- The hosting account / domain (Netlify, Vercel, cPanel, etc.) and your go-ahead.
+  I won't log into hosting or buy a domain on your behalf.
+- For local demos no action is needed — just open `website/index.html` in a browser.
+
+---
+
+## 4. Real-device screenshots for the runbook  ·  optional polish
+
+The runbook suggests keeping backup screenshots. I can't capture screenshots
+from a physical phone.
+
+**What I need (optional):**
+- A few screenshots from a real device (login, home, live map, completed delivery)
+  if you want them in the docs. The emulator screenshots already in
+  `driver_app/` cover the basics.
+
+---
+
+_Nothing above blocks the local emulator demo. Items 1–4 are only required for a
+real-phone demo, a Play Store release, or a public website._
