@@ -1,8 +1,21 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+// Read the Google Maps key from android/local.properties (gitignored) so it is
+// never committed. Empty by default — the app falls back to OpenStreetMap.
+val mapsApiKey: String = run {
+    val props = Properties()
+    val file = rootProject.file("local.properties")
+    if (file.exists()) {
+        file.inputStream().use { props.load(it) }
+    }
+    props.getProperty("MAPS_API_KEY") ?: ""
 }
 
 android {
@@ -28,6 +41,8 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // Injected into AndroidManifest as ${MAPS_API_KEY}.
+        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
     }
 
     buildTypes {

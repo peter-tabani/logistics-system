@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart' as gmaps;
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -15,6 +16,11 @@ const String apiBaseUrl = configuredApiBaseUrl == ''
     ? (kIsWeb ? 'http://localhost:5000' : 'http://10.0.2.2:5000')
     : configuredApiBaseUrl;
 const Duration apiRequestTimeout = Duration(seconds: 12);
+// Google Maps key passed at build time via --dart-define=GOOGLE_MAPS_API_KEY=...
+// When empty, the app renders the free OpenStreetMap (flutter_map) layer.
+// The native Maps SDK key also lives in android/local.properties (MAPS_API_KEY).
+const String googleMapsApiKey = String.fromEnvironment('GOOGLE_MAPS_API_KEY');
+const bool useGoogleMaps = googleMapsApiKey != '';
 const Color stanDark = Color(0xFF061014);
 const Color stanPanel = Color(0xFF0B1A20);
 const Color stanSurface = Color(0xFFF3F7FA);
@@ -493,6 +499,10 @@ class DriverHomeScreen extends StatefulWidget {
 class _DriverHomeScreenState extends State<DriverHomeScreen>
     with WidgetsBindingObserver {
   final MapController _mapController = MapController();
+  gmaps.GoogleMapController? _googleMapController;
+  int? _routeForDeliveryId;
+  List<gmaps.LatLng> _googleRoutePoints = [];
+  bool _isFetchingRoute = false;
 
   bool _isSendingLocation = false;
   bool _isLoadingDeliveries = false;
@@ -540,6 +550,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _trackingTimer?.cancel();
+    _googleMapController?.dispose();
     super.dispose();
   }
 
@@ -1048,10 +1059,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               : 'Location sent successfully.';
         });
         if (_selectedDeliveryId != null) {
-          _mapController.move(
-            LatLng(position.latitude, position.longitude),
-            15,
-          );
+          _moveCamera(position.latitude, position.longitude, 15);
         }
         unawaited(_handleArrivalDetection(position));
         unawaited(_flushPendingTrackingEvents());
@@ -1163,10 +1171,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (_lastPosition == null) {
       await _sendCurrentLocation();
     } else {
-      _mapController.move(
-        LatLng(_lastPosition!.latitude, _lastPosition!.longitude),
-        16,
-      );
+      _moveCamera(_lastPosition!.latitude, _lastPosition!.longitude, 16);
     }
 
     if (!mounted || _lastPosition == null) return;
@@ -1216,6 +1221,217 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   Widget _buildMap() {
+    return useGoogleMaps ? _buildGoogleMap() : _buildOsmMap();
+  }
+
+  void _moveCamera(double latitude, double longitude, double zoom) {
+    if (useGoogleMaps) {
+      _googleMapController?.animateCamera(
+        gmaps.CameraUpdate.newLatLngZoom(
+          gmaps.LatLng(latitude, longitude),
+          zoom,
+        ),
+      );
+      return;
+    }
+
+    _mapController.move(LatLng(latitude, longitude), zoom);
+  }
+
+  // Decodes a Google "encoded polyline" string into map points.
+  List<gmaps.LatLng> _decodePolyline(String encoded) {
+    final points = <gmaps.LatLng>[];
+    var index = 0;
+    var lat = 0;
+    var lng = 0;
+
+    while (index < encoded.length) {
+      int shift = 0;
+      int result = 0;
+      int byte;
+      do {
+        byte = encoded.codeUnitAt(index++) - 63;
+        result |= (byte & 0x1f) << shift;
+        shift += 5;
+      } while (byte >= 0x20);
+      lat += (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
+
+      shift = 0;
+      result = 0;
+      do {
+        byte = encoded.codeUnitAt(index++) - 63;
+        result |= (byte & 0x1f) << shift;
+        shift += 5;
+      } while (byte >= 0x20);
+      lng += (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
+
+      points.add(gmaps.LatLng(lat / 1e5, lng / 1e5));
+    }
+
+    return points;
+  }
+
+  // Fetches a road-following route (pickup -> dropoff) from Google Directions.
+  // Cached per delivery so live GPS updates don't re-request it.
+  Future<void> _fetchGoogleRoute(Map<String, dynamic> delivery) async {
+    if (!useGoogleMaps || _isFetchingRoute) return;
+
+    final pickup = _pickupPoint(delivery);
+    final dropoff = _dropoffPoint(delivery);
+
+    if (pickup == null || dropoff == null) return;
+
+    _isFetchingRoute = true;
+
+    try {
+      final url = Uri.parse(
+        'https://maps.googleapis.com/maps/api/directions/json'
+        '?origin=${pickup.latitude},${pickup.longitude}'
+        '&destination=${dropoff.latitude},${dropoff.longitude}'
+        '&mode=driving&key=$googleMapsApiKey',
+      );
+      final response = await http.get(url).timeout(apiRequestTimeout);
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final routes = data['routes'] as List<dynamic>?;
+
+      if (routes == null || routes.isEmpty) return;
+
+      final encoded =
+          routes.first['overview_polyline']['points'] as String? ?? '';
+
+      if (!mounted || encoded.isEmpty) return;
+
+      setState(() {
+        _routeForDeliveryId = delivery['id'] as int;
+        _googleRoutePoints = _decodePolyline(encoded);
+      });
+    } catch (_) {
+      // Leave the straight-line fallback in place if Directions fails.
+    } finally {
+      _isFetchingRoute = false;
+    }
+  }
+
+  void _ensureGoogleRoute(Map<String, dynamic>? delivery) {
+    if (!useGoogleMaps || delivery == null) return;
+
+    final deliveryId = delivery['id'] as int;
+
+    if (_routeForDeliveryId == deliveryId || _isFetchingRoute) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_fetchGoogleRoute(delivery));
+    });
+  }
+
+  Set<gmaps.Marker> _googleMarkers(
+    gmaps.LatLng? driver,
+    LatLng? pickup,
+    LatLng? dropoff,
+  ) {
+    final markers = <gmaps.Marker>{};
+
+    if (driver != null) {
+      markers.add(
+        gmaps.Marker(
+          markerId: const gmaps.MarkerId('driver'),
+          position: driver,
+          icon: gmaps.BitmapDescriptor.defaultMarkerWithHue(
+            gmaps.BitmapDescriptor.hueAzure,
+          ),
+          infoWindow: const gmaps.InfoWindow(title: 'You'),
+        ),
+      );
+    }
+
+    if (pickup != null) {
+      markers.add(
+        gmaps.Marker(
+          markerId: const gmaps.MarkerId('pickup'),
+          position: gmaps.LatLng(pickup.latitude, pickup.longitude),
+          icon: gmaps.BitmapDescriptor.defaultMarkerWithHue(
+            gmaps.BitmapDescriptor.hueGreen,
+          ),
+          infoWindow: const gmaps.InfoWindow(title: 'Pickup'),
+        ),
+      );
+    }
+
+    if (dropoff != null) {
+      markers.add(
+        gmaps.Marker(
+          markerId: const gmaps.MarkerId('dropoff'),
+          position: gmaps.LatLng(dropoff.latitude, dropoff.longitude),
+          icon: gmaps.BitmapDescriptor.defaultMarkerWithHue(
+            gmaps.BitmapDescriptor.hueRed,
+          ),
+          infoWindow: const gmaps.InfoWindow(title: 'Dropoff'),
+        ),
+      );
+    }
+
+    return markers;
+  }
+
+  Widget _buildGoogleMap() {
+    final delivery = _selectedDelivery;
+    _ensureGoogleRoute(delivery);
+
+    final pickupPoint = _pickupPoint(delivery);
+    final dropoffPoint = _dropoffPoint(delivery);
+    final driverPoint = _lastPosition == null
+        ? null
+        : gmaps.LatLng(_lastPosition!.latitude, _lastPosition!.longitude);
+
+    final polylines = <gmaps.Polyline>{};
+    final hasRoute = _googleRoutePoints.isNotEmpty &&
+        _routeForDeliveryId == delivery?['id'];
+
+    if (hasRoute) {
+      polylines.add(
+        gmaps.Polyline(
+          polylineId: const gmaps.PolylineId('route'),
+          points: _googleRoutePoints,
+          color: const Color(0xFFF97316),
+          width: 5,
+        ),
+      );
+    } else if (pickupPoint != null && dropoffPoint != null) {
+      polylines.add(
+        gmaps.Polyline(
+          polylineId: const gmaps.PolylineId('route'),
+          points: [
+            gmaps.LatLng(pickupPoint.latitude, pickupPoint.longitude),
+            gmaps.LatLng(dropoffPoint.latitude, dropoffPoint.longitude),
+          ],
+          color: const Color(0xFFF97316),
+          width: 5,
+        ),
+      );
+    }
+
+    final center = driverPoint ??
+        (pickupPoint != null
+            ? gmaps.LatLng(pickupPoint.latitude, pickupPoint.longitude)
+            : gmaps.LatLng(defaultMapCenter.latitude, defaultMapCenter.longitude));
+
+    return gmaps.GoogleMap(
+      initialCameraPosition: gmaps.CameraPosition(
+        target: center,
+        zoom: _lastPosition == null ? 12 : 15,
+      ),
+      markers: _googleMarkers(driverPoint, pickupPoint, dropoffPoint),
+      polylines: polylines,
+      myLocationButtonEnabled: false,
+      zoomControlsEnabled: false,
+      mapToolbarEnabled: false,
+      compassEnabled: false,
+      onMapCreated: (controller) => _googleMapController = controller,
+      onTap: (_) => unawaited(_showDriverLocationOnMap()),
+    );
+  }
+
+  Widget _buildOsmMap() {
     final currentPoint = _currentMapCenter;
     final delivery = _selectedDelivery;
     final pickupPoint = _pickupPoint(delivery);
@@ -2088,82 +2304,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         ? null
         : LatLng(_lastPosition!.latitude, _lastPosition!.longitude);
 
-    final routePoints = <LatLng>[
-      ?pickupPoint,
-      ?driverPoint,
-      ?dropoffPoint,
-    ];
-
-    final boundsPoints = routePoints.isNotEmpty
-        ? routePoints
-        : <LatLng>[defaultMapCenter];
-
     return SizedBox(
       width: 124,
       child: Stack(
         fit: StackFit.expand,
         children: [
           IgnorePointer(
-            child: FlutterMap(
-              options: MapOptions(
-                initialCameraFit: boundsPoints.length > 1
-                    ? CameraFit.bounds(
-                        bounds: LatLngBounds.fromPoints(boundsPoints),
-                        padding: const EdgeInsets.all(26),
-                      )
-                    : null,
-                initialCenter: boundsPoints.first,
-                initialZoom: 12.5,
-                interactionOptions: const InteractionOptions(
-                  flags: InteractiveFlag.none,
-                ),
-              ),
-              children: [
-                TileLayer(
-                  urlTemplate:
-                      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'com.example.driver_app',
-                ),
-                if (routePoints.length > 1)
-                  PolylineLayer(
-                    polylines: [
-                      Polyline(
-                        points: routePoints,
-                        color: const Color(0xFFF97316),
-                        strokeWidth: 4,
-                      ),
-                    ],
-                  ),
-                MarkerLayer(
-                  markers: [
-                    if (pickupPoint != null)
-                      Marker(
-                        point: pickupPoint,
-                        width: 16,
-                        height: 16,
-                        child: _buildMiniDot(const Color(0xFF16A34A)),
-                      ),
-                    if (dropoffPoint != null)
-                      Marker(
-                        point: dropoffPoint,
-                        width: 16,
-                        height: 16,
-                        child: _buildMiniDot(const Color(0xFFDC2626)),
-                      ),
-                    if (driverPoint != null)
-                      Marker(
-                        point: driverPoint,
-                        width: 22,
-                        height: 22,
-                        child: _buildMiniDot(
-                          const Color(0xFFF97316),
-                          glow: true,
-                        ),
-                      ),
-                  ],
-                ),
-              ],
-            ),
+            child: useGoogleMaps
+                ? _buildGoogleMiniMap(pickupPoint, dropoffPoint, driverPoint)
+                : _buildOsmMiniMap(pickupPoint, dropoffPoint, driverPoint),
           ),
           // Subtle gradient to blend the map into the card edge.
           Positioned(
@@ -2186,6 +2335,120 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildGoogleMiniMap(
+    LatLng? pickupPoint,
+    LatLng? dropoffPoint,
+    LatLng? driverPoint,
+  ) {
+    final polylines = <gmaps.Polyline>{};
+    if (pickupPoint != null && dropoffPoint != null) {
+      polylines.add(
+        gmaps.Polyline(
+          polylineId: const gmaps.PolylineId('mini-route'),
+          points: [
+            gmaps.LatLng(pickupPoint.latitude, pickupPoint.longitude),
+            gmaps.LatLng(dropoffPoint.latitude, dropoffPoint.longitude),
+          ],
+          color: const Color(0xFFF97316),
+          width: 4,
+        ),
+      );
+    }
+
+    final driverLatLng = driverPoint == null
+        ? null
+        : gmaps.LatLng(driverPoint.latitude, driverPoint.longitude);
+    final center = driverLatLng ??
+        (pickupPoint != null
+            ? gmaps.LatLng(pickupPoint.latitude, pickupPoint.longitude)
+            : gmaps.LatLng(
+                defaultMapCenter.latitude,
+                defaultMapCenter.longitude,
+              ));
+
+    return gmaps.GoogleMap(
+      liteModeEnabled: true,
+      initialCameraPosition: gmaps.CameraPosition(target: center, zoom: 12.5),
+      markers: _googleMarkers(driverLatLng, pickupPoint, dropoffPoint),
+      polylines: polylines,
+      zoomControlsEnabled: false,
+      mapToolbarEnabled: false,
+    );
+  }
+
+  Widget _buildOsmMiniMap(
+    LatLng? pickupPoint,
+    LatLng? dropoffPoint,
+    LatLng? driverPoint,
+  ) {
+    final routePoints = <LatLng>[
+      ?pickupPoint,
+      ?driverPoint,
+      ?dropoffPoint,
+    ];
+
+    final boundsPoints = routePoints.isNotEmpty
+        ? routePoints
+        : <LatLng>[defaultMapCenter];
+
+    return FlutterMap(
+      options: MapOptions(
+        initialCameraFit: boundsPoints.length > 1
+            ? CameraFit.bounds(
+                bounds: LatLngBounds.fromPoints(boundsPoints),
+                padding: const EdgeInsets.all(26),
+              )
+            : null,
+        initialCenter: boundsPoints.first,
+        initialZoom: 12.5,
+        interactionOptions: const InteractionOptions(
+          flags: InteractiveFlag.none,
+        ),
+      ),
+      children: [
+        TileLayer(
+          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          userAgentPackageName: 'com.example.driver_app',
+        ),
+        if (routePoints.length > 1)
+          PolylineLayer(
+            polylines: [
+              Polyline(
+                points: routePoints,
+                color: const Color(0xFFF97316),
+                strokeWidth: 4,
+              ),
+            ],
+          ),
+        MarkerLayer(
+          markers: [
+            if (pickupPoint != null)
+              Marker(
+                point: pickupPoint,
+                width: 16,
+                height: 16,
+                child: _buildMiniDot(const Color(0xFF16A34A)),
+              ),
+            if (dropoffPoint != null)
+              Marker(
+                point: dropoffPoint,
+                width: 16,
+                height: 16,
+                child: _buildMiniDot(const Color(0xFFDC2626)),
+              ),
+            if (driverPoint != null)
+              Marker(
+                point: driverPoint,
+                width: 22,
+                height: 22,
+                child: _buildMiniDot(const Color(0xFFF97316), glow: true),
+              ),
+          ],
+        ),
+      ],
     );
   }
 
