@@ -1,0 +1,17 @@
+# Secrets — never read or touch these
+**/.env
+**/.env.*
+!**/.env.example
+**/*.keystore
+**/*.jks
+**/*secret*
+
+# Dependencies and build output
+**/node_modules/
+dashboard/dist/
+driver_app/build/
+driver_app/.dart_tool/
+
+# Database dumps / backups
+*.dump
+*.sql.backup

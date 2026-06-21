@@ -1,0 +1,19 @@
+node_modules/
+.env
+.env.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+
+# IDE / OS
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
