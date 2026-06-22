@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -497,12 +498,20 @@ class DriverHomeScreen extends StatefulWidget {
 }
 
 class _DriverHomeScreenState extends State<DriverHomeScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, TickerProviderStateMixin {
   final MapController _mapController = MapController();
   gmaps.GoogleMapController? _googleMapController;
   int? _routeForDeliveryId;
   List<gmaps.LatLng> _googleRoutePoints = [];
   bool _isFetchingRoute = false;
+
+  // Smooth marker animation: glide between GPS pings + rotate to heading.
+  late final AnimationController _markerAnim;
+  LatLng? _displayedLatLng;
+  LatLng _animFrom = defaultMapCenter;
+  LatLng _animTo = defaultMapCenter;
+  double _markerBearingDeg = 0;
+  gmaps.BitmapDescriptor? _vehicleBitmap;
 
   bool _isSendingLocation = false;
   bool _isLoadingDeliveries = false;
@@ -525,6 +534,20 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _markerAnim = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..addListener(() {
+        final t = Curves.easeInOut.transform(_markerAnim.value);
+        setState(() {
+          _displayedLatLng = LatLng(
+            _animFrom.latitude + (_animTo.latitude - _animFrom.latitude) * t,
+            _animFrom.longitude +
+                (_animTo.longitude - _animFrom.longitude) * t,
+          );
+        });
+      });
+    unawaited(_loadVehicleBitmap());
     unawaited(_initializeDriverHome());
   }
 
@@ -550,6 +573,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _trackingTimer?.cancel();
+    _markerAnim.dispose();
     _googleMapController?.dispose();
     super.dispose();
   }
@@ -1058,6 +1082,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               ? 'Tracking active. Last location sent successfully.'
               : 'Location sent successfully.';
         });
+        _animateMarkerTo(LatLng(position.latitude, position.longitude));
         if (_selectedDeliveryId != null) {
           _moveCamera(position.latitude, position.longitude, 15);
         }
@@ -1238,6 +1263,105 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _mapController.move(LatLng(latitude, longitude), zoom);
   }
 
+  // Compass bearing (degrees, 0 = north) from point a to b.
+  double _bearing(LatLng a, LatLng b) {
+    final lat1 = a.latitude * pi / 180;
+    final lat2 = b.latitude * pi / 180;
+    final dLon = (b.longitude - a.longitude) * pi / 180;
+    final y = sin(dLon) * cos(lat2);
+    final x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon);
+    return (atan2(y, x) * 180 / pi + 360) % 360;
+  }
+
+  // Glide the displayed marker from its current spot to a new GPS fix and turn
+  // it to face the direction of travel. Visible during live movement.
+  void _animateMarkerTo(LatLng target) {
+    final from = _displayedLatLng;
+
+    if (from == null) {
+      setState(() => _displayedLatLng = target);
+      return;
+    }
+
+    if (calculateDistanceMeters(from, target) < 1) return;
+
+    _markerBearingDeg = _bearing(from, target);
+    _animFrom = from;
+    _animTo = target;
+    _markerAnim.forward(from: 0);
+  }
+
+  // Rasterize a directional vehicle marker once for the Google map.
+  Future<void> _loadVehicleBitmap() async {
+    if (!useGoogleMaps) return;
+
+    const size = 96.0;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    canvas.drawCircle(
+      const Offset(size / 2, size / 2),
+      size / 2 - 3,
+      Paint()..color = stanDark,
+    );
+    canvas.drawCircle(
+      const Offset(size / 2, size / 2),
+      size / 2 - 3,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 4
+        ..color = Colors.white,
+    );
+
+    final textPainter = TextPainter(textDirection: TextDirection.ltr);
+    textPainter.text = TextSpan(
+      text: String.fromCharCode(Icons.navigation.codePoint),
+      style: TextStyle(
+        fontSize: size * 0.5,
+        fontFamily: Icons.navigation.fontFamily,
+        package: Icons.navigation.fontPackage,
+        color: Colors.white,
+      ),
+    );
+    textPainter.layout();
+    textPainter.paint(
+      canvas,
+      Offset((size - textPainter.width) / 2, (size - textPainter.height) / 2),
+    );
+
+    final image = await recorder.endRecording().toImage(
+      size.toInt(),
+      size.toInt(),
+    );
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+
+    if (bytes == null || !mounted) return;
+
+    setState(() {
+      _vehicleBitmap = gmaps.BitmapDescriptor.bytes(
+        bytes.buffer.asUint8List(),
+      );
+    });
+  }
+
+  // Directional vehicle marker for the OpenStreetMap (flutter_map) layer.
+  Widget _vehicleMarkerWidget() {
+    return Transform.rotate(
+      angle: _markerBearingDeg * pi / 180,
+      child: Container(
+        decoration: BoxDecoration(
+          color: stanDark,
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 3),
+          boxShadow: const [
+            BoxShadow(blurRadius: 12, color: Colors.black38, offset: Offset(0, 4)),
+          ],
+        ),
+        child: const Icon(Icons.navigation, color: Colors.white, size: 24),
+      ),
+    );
+  }
+
   // Decodes a Google "encoded polyline" string into map points.
   List<gmaps.LatLng> _decodePolyline(String encoded) {
     final points = <gmaps.LatLng>[];
@@ -1336,9 +1460,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         gmaps.Marker(
           markerId: const gmaps.MarkerId('driver'),
           position: driver,
-          icon: gmaps.BitmapDescriptor.defaultMarkerWithHue(
-            gmaps.BitmapDescriptor.hueAzure,
-          ),
+          rotation: _markerBearingDeg,
+          anchor: const Offset(0.5, 0.5),
+          flat: true,
+          icon: _vehicleBitmap ??
+              gmaps.BitmapDescriptor.defaultMarkerWithHue(
+                gmaps.BitmapDescriptor.hueAzure,
+              ),
           infoWindow: const gmaps.InfoWindow(title: 'You'),
         ),
       );
@@ -1379,9 +1507,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
     final pickupPoint = _pickupPoint(delivery);
     final dropoffPoint = _dropoffPoint(delivery);
-    final driverPoint = _lastPosition == null
+    final driverDisplay = _displayedLatLng ??
+        (_lastPosition == null
+            ? null
+            : LatLng(_lastPosition!.latitude, _lastPosition!.longitude));
+    final driverPoint = driverDisplay == null
         ? null
-        : gmaps.LatLng(_lastPosition!.latitude, _lastPosition!.longitude);
+        : gmaps.LatLng(driverDisplay.latitude, driverDisplay.longitude);
 
     final polylines = <gmaps.Polyline>{};
     final hasRoute = _googleRoutePoints.isNotEmpty &&
@@ -1469,24 +1601,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           markers: [
             if (_lastPosition != null)
               Marker(
-                point: currentPoint,
+                point: _displayedLatLng ?? currentPoint,
                 width: 52,
                 height: 52,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF111827),
-                    border: Border.all(color: Colors.white, width: 3),
-                    shape: BoxShape.circle,
-                    boxShadow: const [
-                      BoxShadow(
-                        blurRadius: 18,
-                        color: Colors.black26,
-                        offset: Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(Icons.local_shipping, color: Colors.white),
-                ),
+                child: _vehicleMarkerWidget(),
               ),
             if (pickupPoint != null)
               Marker(
