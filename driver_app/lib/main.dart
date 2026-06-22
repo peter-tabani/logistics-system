@@ -21,8 +21,8 @@ const Duration apiRequestTimeout = Duration(seconds: 12);
 // The native Maps SDK key also lives in android/local.properties (MAPS_API_KEY).
 const String googleMapsApiKey = String.fromEnvironment('GOOGLE_MAPS_API_KEY');
 const bool useGoogleMaps = googleMapsApiKey != '';
-const Color stanDark = Color(0xFF13294B); // deep navy blue (primary)
-const Color stanPanel = Color(0xFF1E3A5F); // lifted navy panel
+const Color stanDark = Color(0xFF0E2140); // deep navy blue (primary)
+const Color stanPanel = Color(0xFF17304F); // lifted navy panel
 const Color stanSurface = Color(0xFFEEF2F8); // light app background
 const Color stanMuted = Color(0xFF93A4BD); // muted blue-grey on navy
 const LatLng defaultMapCenter = LatLng(-1.286389, 36.817223);

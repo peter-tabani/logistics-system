@@ -8,8 +8,8 @@ Stan is a logistics / fleet-tracking system with three parts:
 
 ## Brand (keep consistent everywhere)
 - Product name: **Stan**
-- Primary dark (navy): `#13294B`
-- Panel / secondary:    `#1E3A5F`
+- Primary dark (navy): `#0E2140`
+- Panel / secondary:    `#17304F`
 - App background:       `#EEF2F8`
 - Logo: original white stylized "S" mark (vector only — no online or copyrighted images)
 - Style: premium logistics app, deep navy blue (not black)
