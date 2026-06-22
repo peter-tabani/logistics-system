@@ -2023,21 +2023,24 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               children: [
                 Expanded(
                   child: _buildTransportCard(
-                    icon: Icons.pedal_bike,
+                    asset: 'assets/vehicles/bike.png',
+                    fallbackIcon: Icons.pedal_bike,
                     label: 'Bike',
                   ),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
                   child: _buildTransportCard(
-                    icon: Icons.local_shipping_outlined,
+                    asset: 'assets/vehicles/truck.png',
+                    fallbackIcon: Icons.local_shipping_outlined,
                     label: 'Truck',
                   ),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
                   child: _buildTransportCard(
-                    icon: Icons.directions_car_outlined,
+                    asset: 'assets/vehicles/car.png',
+                    fallbackIcon: Icons.directions_car_outlined,
                     label: 'Car',
                   ),
                 ),
@@ -2179,9 +2182,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     );
   }
 
-  Widget _buildTransportCard({required IconData icon, required String label}) {
+  Widget _buildTransportCard({
+    required String asset,
+    required IconData fallbackIcon,
+    required String label,
+  }) {
     return Container(
-      height: 88,
+      height: 96,
+      padding: const EdgeInsets.symmetric(vertical: 10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -2190,8 +2198,17 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, color: stanDark, size: 26),
-          const SizedBox(height: 8),
+          Expanded(
+            child: Image.asset(
+              asset,
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.high,
+              // Until real vehicle images are added, show a clean line icon.
+              errorBuilder: (_, _, _) =>
+                  Icon(fallbackIcon, color: stanDark, size: 30),
+            ),
+          ),
+          const SizedBox(height: 6),
           Text(
             label,
             style: const TextStyle(

@@ -63,6 +63,11 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  # Vehicle category art. Drop bike.png / truck.png / car.png into
+  # assets/vehicles/ (see the README there). Falls back to line icons if absent.
+  assets:
+    - assets/vehicles/
+
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg
