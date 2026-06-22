@@ -1830,7 +1830,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             padding: const EdgeInsets.fromLTRB(24, 14, 24, 66),
             decoration: const BoxDecoration(
               color: stanDark,
-              borderRadius: BorderRadius.vertical(bottom: Radius.circular(32)),
+              borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1905,24 +1905,21 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               children: [
                 Expanded(
                   child: _buildTransportCard(
-                    asset: 'assets/vehicles/bike.png',
-                    fallbackIcon: Icons.two_wheeler,
+                    icon: Icons.pedal_bike,
                     label: 'Bike',
                   ),
                 ),
-                const SizedBox(width: 18),
+                const SizedBox(width: 14),
                 Expanded(
                   child: _buildTransportCard(
-                    asset: 'assets/vehicles/truck.png',
-                    fallbackIcon: Icons.local_shipping,
+                    icon: Icons.local_shipping_outlined,
                     label: 'Truck',
                   ),
                 ),
-                const SizedBox(width: 18),
+                const SizedBox(width: 14),
                 Expanded(
                   child: _buildTransportCard(
-                    asset: 'assets/vehicles/car.png',
-                    fallbackIcon: Icons.directions_car,
+                    icon: Icons.directions_car_outlined,
                     label: 'Car',
                   ),
                 ),
@@ -2064,43 +2061,25 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     );
   }
 
-  Widget _buildTransportCard({
-    required String asset,
-    required IconData fallbackIcon,
-    required String label,
-  }) {
+  Widget _buildTransportCard({required IconData icon, required String label}) {
     return Container(
-      height: 92,
+      height: 88,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: stanDark.withValues(alpha: 0.12),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Image.asset(
-            asset,
-            width: 46,
-            height: 46,
-            fit: BoxFit.contain,
-            filterQuality: FilterQuality.high,
-            errorBuilder: (_, _, _) =>
-                Icon(fallbackIcon, color: stanDark, size: 26),
-          ),
-          const SizedBox(height: 6),
+          Icon(icon, color: stanDark, size: 26),
+          const SizedBox(height: 8),
           Text(
             label,
             style: const TextStyle(
               color: stanDark,
-              fontSize: 13.5,
-              fontWeight: FontWeight.w900,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -2179,19 +2158,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         });
         unawaited(_startTracking());
       },
-      borderRadius: BorderRadius.circular(24),
+      borderRadius: BorderRadius.circular(14),
       child: Container(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [
-            BoxShadow(
-              color: stanDark.withValues(alpha: 0.08),
-              blurRadius: 24,
-              offset: const Offset(0, 12),
-            ),
-          ],
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2210,19 +2183,19 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: stanDark,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
                           letterSpacing: -0.2,
                         ),
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 3),
                       Text(
                         _trackingCode(deliveryId),
                         style: const TextStyle(
-                          color: stanMuted,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.4,
+                          color: Color(0xFF64748B),
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.3,
                         ),
                       ),
                     ],
@@ -2231,7 +2204,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 _buildStatusPill(status),
               ],
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 16),
             _buildRouteConnector(delivery),
           ],
         ),
@@ -2245,23 +2218,17 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Row(
         children: [
           Container(
-            width: 56,
-            height: 56,
+            width: 52,
+            height: 52,
             decoration: BoxDecoration(
               color: stanDark,
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: const Icon(
               Icons.local_shipping_outlined,
@@ -2305,21 +2272,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(20, 16, 16, 16),
+        padding: const EdgeInsets.fromLTRB(18, 14, 14, 14),
         decoration: BoxDecoration(
           gradient: const LinearGradient(
             begin: Alignment.centerLeft,
             end: Alignment.centerRight,
             colors: [stanDark, stanPanel],
           ),
-          borderRadius: BorderRadius.circular(22),
-          boxShadow: [
-            BoxShadow(
-              color: stanDark.withValues(alpha: 0.25),
-              blurRadius: 22,
-              offset: const Offset(0, 12),
-            ),
-          ],
+          borderRadius: BorderRadius.circular(14),
         ),
         child: Row(
           children: [
@@ -2355,16 +2315,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             ),
             const SizedBox(width: 14),
             Container(
-              width: 56,
-              height: 56,
+              width: 52,
+              height: 52,
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(18),
+                color: Colors.white.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
               ),
               child: const Icon(
-                Icons.local_shipping_rounded,
+                Icons.local_shipping_outlined,
                 color: Colors.white,
-                size: 30,
+                size: 26,
               ),
             ),
           ],
@@ -2551,24 +2511,18 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: const [
-          BoxShadow(
-            blurRadius: 18,
-            color: Color(0x0D000000),
-            offset: Offset(0, 8),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 46,
-            height: 46,
+            width: 44,
+            height: 44,
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(15),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Center(
               child: Text(
@@ -2648,10 +2602,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         children: [
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(22),
+            padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               color: stanDark,
-              borderRadius: BorderRadius.circular(28),
+              borderRadius: BorderRadius.circular(16),
             ),
             child: Row(
               children: [
@@ -2715,14 +2669,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           Container(
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: const [
-                BoxShadow(
-                  blurRadius: 18,
-                  color: Color(0x0D000000),
-                  offset: Offset(0, 10),
-                ),
-              ],
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
             ),
             child: Column(
               children: [
@@ -2793,14 +2741,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: const [
-          BoxShadow(
-            blurRadius: 16,
-            color: Color(0x0D000000),
-            offset: Offset(0, 8),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Column(
         children: [
@@ -2932,17 +2874,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   Widget _buildInfoPanel(IconData icon, String title, String body) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3038,18 +2974,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final isDelivered = status == 'delivered';
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(20),
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(26),
-        boxShadow: const [
-          BoxShadow(
-            blurRadius: 24,
-            color: Color(0x0D000000),
-            offset: Offset(0, 12),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3496,18 +3426,18 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   Widget _buildStatusPill(String status) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
-        borderRadius: BorderRadius.circular(999),
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
         formatDeliveryStatus(status).toUpperCase(),
         style: const TextStyle(
-          color: Color(0xFF111827),
-          fontSize: 11,
-          fontWeight: FontWeight.w900,
-          letterSpacing: 0.5,
+          color: Color(0xFF475569),
+          fontSize: 10.5,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.6,
         ),
       ),
     );
