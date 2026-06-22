@@ -21,10 +21,10 @@ const Duration apiRequestTimeout = Duration(seconds: 12);
 // The native Maps SDK key also lives in android/local.properties (MAPS_API_KEY).
 const String googleMapsApiKey = String.fromEnvironment('GOOGLE_MAPS_API_KEY');
 const bool useGoogleMaps = googleMapsApiKey != '';
-const Color stanDark = Color(0xFF061014);
-const Color stanPanel = Color(0xFF0B1A20);
-const Color stanSurface = Color(0xFFF3F7FA);
-const Color stanMuted = Color(0xFF8FA3AD);
+const Color stanDark = Color(0xFF13294B); // deep navy blue (primary)
+const Color stanPanel = Color(0xFF1E3A5F); // lifted navy panel
+const Color stanSurface = Color(0xFFEEF2F8); // light app background
+const Color stanMuted = Color(0xFF93A4BD); // muted blue-grey on navy
 const LatLng defaultMapCenter = LatLng(-1.286389, 36.817223);
 const String pendingTrackingEventsKey = 'pendingTrackingEvents';
 const double pickupArrivalRadiusMeters = 120;
@@ -1791,46 +1791,46 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   Widget _buildAssignmentsPage(BuildContext context) {
     final activeDeliveries = _activeDeliveries;
 
+    // Single-screen layout: no vertical scrolling. The In Progress area flexes
+    // to absorb remaining height so nothing overflows on smaller devices.
     return SafeArea(
       bottom: false,
-      child: RefreshIndicator(
-        onRefresh: _loadDeliveries,
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            _buildHomeHero(activeDeliveries),
-            const SizedBox(height: 22),
-            _buildSectionHeader('In Progress', 'See All'),
-            const SizedBox(height: 12),
-            if (_isLoadingDeliveries)
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 24),
-                child: LinearProgressIndicator(),
-              )
-            else
-              _buildInProgressCarousel(activeDeliveries),
-            const SizedBox(height: 24),
-            _buildSectionHeader('Today\'s Promo', 'Details'),
-            const SizedBox(height: 12),
-            _buildPromoCarousel(),
-            const SizedBox(height: 96),
-          ],
-        ),
+      child: Column(
+        children: [
+          _buildHomeHero(activeDeliveries),
+          const SizedBox(height: 14),
+          _buildSectionHeader('In Progress', 'See All'),
+          const SizedBox(height: 10),
+          Expanded(
+            child: _isLoadingDeliveries
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 24),
+                    child: Align(
+                      alignment: Alignment.topCenter,
+                      child: LinearProgressIndicator(),
+                    ),
+                  )
+                : _buildInProgressCarousel(activeDeliveries),
+          ),
+          const SizedBox(height: 12),
+          _buildPromoStrip(),
+          const SizedBox(height: 12),
+        ],
       ),
     );
   }
 
   Widget _buildHomeHero(List<Map<String, dynamic>> activeDeliveries) {
     return SizedBox(
-      height: 344,
+      height: 278,
       child: Stack(
         children: [
           Container(
-            height: 284,
-            padding: const EdgeInsets.fromLTRB(24, 18, 24, 76),
+            height: 232,
+            padding: const EdgeInsets.fromLTRB(24, 14, 24, 66),
             decoration: const BoxDecoration(
               color: stanDark,
-              borderRadius: BorderRadius.vertical(bottom: Radius.circular(34)),
+              borderRadius: BorderRadius.vertical(bottom: Radius.circular(32)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2063,28 +2063,36 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   Widget _buildTransportCard({required IconData icon, required String label}) {
     return Container(
-      height: 96,
+      height: 92,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.10),
-            blurRadius: 18,
-            offset: const Offset(0, 9),
+            color: stanDark.withValues(alpha: 0.12),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, color: stanDark, size: 29),
-          const SizedBox(height: 12),
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: stanSurface,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, color: stanDark, size: 24),
+          ),
+          const SizedBox(height: 8),
           Text(
             label,
             style: const TextStyle(
               color: stanDark,
-              fontSize: 14,
+              fontSize: 13.5,
               fontWeight: FontWeight.w900,
             ),
           ),
@@ -2102,8 +2110,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             child: Text(
               title,
               style: const TextStyle(
-                color: Color(0xFF1E293B),
-                fontSize: 20,
+                color: stanDark,
+                fontSize: 19,
                 fontWeight: FontWeight.w900,
                 letterSpacing: -0.4,
               ),
@@ -2111,7 +2119,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           ),
           TextButton(
             onPressed: _isLoadingDeliveries ? null : _loadDeliveries,
-            child: Text(action),
+            style: TextButton.styleFrom(foregroundColor: stanDark),
+            child: Text(
+              action,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
           ),
         ],
       ),
@@ -2122,21 +2134,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     return 'STAN-${deliveryId.toString().padLeft(5, '0')}';
   }
 
-  Color _statusColor(String status) {
-    switch (status) {
-      case 'assigned':
-        return const Color(0xFFF59E0B);
-      case 'picked_up':
-        return const Color(0xFF2563EB);
-      case 'in_transit':
-        return const Color(0xFF16A34A);
-      case 'delivered':
-        return const Color(0xFF64748B);
-      default:
-        return stanMuted;
-    }
-  }
-
   Widget _buildInProgressCarousel(List<Map<String, dynamic>> activeDeliveries) {
     if (activeDeliveries.isEmpty) {
       return Padding(
@@ -2145,31 +2142,28 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       );
     }
 
-    final cardWidth = MediaQuery.of(context).size.width *
-        (activeDeliveries.length > 1 ? 0.86 : 1) -
-        (activeDeliveries.length > 1 ? 0 : 48);
+    final screenWidth = MediaQuery.of(context).size.width;
+    final cardWidth = activeDeliveries.length > 1
+        ? screenWidth * 0.86
+        : screenWidth - 48;
 
-    return SizedBox(
-      height: 188,
-      child: ListView.separated(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        scrollDirection: Axis.horizontal,
-        itemCount: activeDeliveries.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 16),
-        itemBuilder: (context, index) {
-          return SizedBox(
-            width: cardWidth,
-            child: _buildTrackingCard(activeDeliveries[index]),
-          );
-        },
-      ),
+    return ListView.separated(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      scrollDirection: Axis.horizontal,
+      itemCount: activeDeliveries.length,
+      separatorBuilder: (_, _) => const SizedBox(width: 16),
+      itemBuilder: (context, index) {
+        return SizedBox(
+          width: cardWidth,
+          child: _buildTrackingCard(activeDeliveries[index]),
+        );
+      },
     );
   }
 
   Widget _buildTrackingCard(Map<String, dynamic> delivery) {
     final deliveryId = delivery['id'] as int;
     final status = delivery['status'] as String;
-    final dropoffAddress = delivery['dropoffAddress'] as String;
 
     return InkWell(
       onTap: () {
@@ -2178,301 +2172,62 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         });
         unawaited(_startTracking());
       },
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(24),
       child: Container(
+        padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
+              color: stanDark.withValues(alpha: 0.08),
               blurRadius: 24,
               offset: const Offset(0, 12),
             ),
           ],
         ),
-        clipBehavior: Clip.antiAlias,
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(18, 16, 12, 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text(
-                      'Current Tracking',
-                      style: TextStyle(
-                        color: stanMuted,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.6,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        delivery['customerName'] as String,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: stanDark,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.2,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _trackingCode(deliveryId),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: stanDark,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.4,
+                      const SizedBox(height: 2),
+                      Text(
+                        _trackingCode(deliveryId),
+                        style: const TextStyle(
+                          color: stanMuted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.4,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildTrackingDetail(
-                      icon: Icons.location_on,
-                      iconColor: const Color(0xFFDC2626),
-                      label: 'Destination',
-                      value: dropoffAddress,
-                    ),
-                    const SizedBox(height: 12),
-                    _buildTrackingDetail(
-                      icon: Icons.circle,
-                      iconColor: _statusColor(status),
-                      label: 'Status',
-                      value: formatDeliveryStatus(status),
-                      iconSize: 11,
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ),
-            _buildMiniMap(delivery),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTrackingDetail({
-    required IconData icon,
-    required Color iconColor,
-    required String label,
-    required String value,
-    double iconSize = 16,
-  }) {
-    return Row(
-      children: [
-        Container(
-          width: 30,
-          height: 30,
-          decoration: BoxDecoration(
-            color: iconColor.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(icon, color: iconColor, size: iconSize),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  color: stanMuted,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 1),
-              Text(
-                value,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: stanDark,
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildMiniMap(Map<String, dynamic> delivery) {
-    final pickupPoint = _pickupPoint(delivery);
-    final dropoffPoint = _dropoffPoint(delivery);
-    final driverPoint = _lastPosition == null
-        ? null
-        : LatLng(_lastPosition!.latitude, _lastPosition!.longitude);
-
-    return SizedBox(
-      width: 124,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          IgnorePointer(
-            child: useGoogleMaps
-                ? _buildGoogleMiniMap(pickupPoint, dropoffPoint, driverPoint)
-                : _buildOsmMiniMap(pickupPoint, dropoffPoint, driverPoint),
-          ),
-          // Subtle gradient to blend the map into the card edge.
-          Positioned(
-            left: 0,
-            top: 0,
-            bottom: 0,
-            width: 24,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                  colors: [
-                    Colors.white,
-                    Colors.white.withValues(alpha: 0),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildGoogleMiniMap(
-    LatLng? pickupPoint,
-    LatLng? dropoffPoint,
-    LatLng? driverPoint,
-  ) {
-    final polylines = <gmaps.Polyline>{};
-    if (pickupPoint != null && dropoffPoint != null) {
-      polylines.add(
-        gmaps.Polyline(
-          polylineId: const gmaps.PolylineId('mini-route'),
-          points: [
-            gmaps.LatLng(pickupPoint.latitude, pickupPoint.longitude),
-            gmaps.LatLng(dropoffPoint.latitude, dropoffPoint.longitude),
-          ],
-          color: const Color(0xFFF97316),
-          width: 4,
-        ),
-      );
-    }
-
-    final driverLatLng = driverPoint == null
-        ? null
-        : gmaps.LatLng(driverPoint.latitude, driverPoint.longitude);
-    final center = driverLatLng ??
-        (pickupPoint != null
-            ? gmaps.LatLng(pickupPoint.latitude, pickupPoint.longitude)
-            : gmaps.LatLng(
-                defaultMapCenter.latitude,
-                defaultMapCenter.longitude,
-              ));
-
-    return gmaps.GoogleMap(
-      liteModeEnabled: true,
-      initialCameraPosition: gmaps.CameraPosition(target: center, zoom: 12.5),
-      markers: _googleMarkers(driverLatLng, pickupPoint, dropoffPoint),
-      polylines: polylines,
-      zoomControlsEnabled: false,
-      mapToolbarEnabled: false,
-    );
-  }
-
-  Widget _buildOsmMiniMap(
-    LatLng? pickupPoint,
-    LatLng? dropoffPoint,
-    LatLng? driverPoint,
-  ) {
-    final routePoints = <LatLng>[
-      ?pickupPoint,
-      ?driverPoint,
-      ?dropoffPoint,
-    ];
-
-    final boundsPoints = routePoints.isNotEmpty
-        ? routePoints
-        : <LatLng>[defaultMapCenter];
-
-    return FlutterMap(
-      options: MapOptions(
-        initialCameraFit: boundsPoints.length > 1
-            ? CameraFit.bounds(
-                bounds: LatLngBounds.fromPoints(boundsPoints),
-                padding: const EdgeInsets.all(26),
-              )
-            : null,
-        initialCenter: boundsPoints.first,
-        initialZoom: 12.5,
-        interactionOptions: const InteractionOptions(
-          flags: InteractiveFlag.none,
-        ),
-      ),
-      children: [
-        TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.example.driver_app',
-        ),
-        if (routePoints.length > 1)
-          PolylineLayer(
-            polylines: [
-              Polyline(
-                points: routePoints,
-                color: const Color(0xFFF97316),
-                strokeWidth: 4,
-              ),
-            ],
-          ),
-        MarkerLayer(
-          markers: [
-            if (pickupPoint != null)
-              Marker(
-                point: pickupPoint,
-                width: 16,
-                height: 16,
-                child: _buildMiniDot(const Color(0xFF16A34A)),
-              ),
-            if (dropoffPoint != null)
-              Marker(
-                point: dropoffPoint,
-                width: 16,
-                height: 16,
-                child: _buildMiniDot(const Color(0xFFDC2626)),
-              ),
-            if (driverPoint != null)
-              Marker(
-                point: driverPoint,
-                width: 22,
-                height: 22,
-                child: _buildMiniDot(const Color(0xFFF97316), glow: true),
-              ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildMiniDot(Color color, {bool glow = false}) {
-    return Container(
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-        border: Border.all(color: Colors.white, width: 2.5),
-        boxShadow: glow
-            ? [
-                BoxShadow(
-                  color: color.withValues(alpha: 0.55),
-                  blurRadius: 10,
-                  spreadRadius: 1,
-                ),
-              ]
-            : const [
-                BoxShadow(
-                  color: Colors.black26,
-                  blurRadius: 4,
-                  offset: Offset(0, 2),
-                ),
+                _buildStatusPill(status),
               ],
+            ),
+            const SizedBox(height: 14),
+            _buildRouteConnector(delivery),
+          ],
+        ),
       ),
     );
   }
@@ -2539,80 +2294,74 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     );
   }
 
-  Widget _buildPromoCarousel() {
-    return SizedBox(
-      height: 150,
-      child: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        scrollDirection: Axis.horizontal,
-        children: [
-          _buildPromoCard(
-            title: 'Save Up To',
-            discount: '50%',
-            icon: Icons.local_shipping,
+  Widget _buildPromoStrip() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 16, 16),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            colors: [stanDark, stanPanel],
           ),
-          const SizedBox(width: 16),
-          _buildPromoCard(
-            title: 'Bike Priority',
-            discount: 'Fast',
-            icon: Icons.two_wheeler,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPromoCard({
-    required String title,
-    required String discount,
-    required IconData icon,
-  }) {
-    return Container(
-      width: 300,
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: const Color(0xFF91ADBD),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Color(0xFF27404C),
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  discount,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 40,
-                    height: 0.95,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -1.2,
-                  ),
-                ),
-              ],
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: [
+            BoxShadow(
+              color: stanDark.withValues(alpha: 0.25),
+              blurRadius: 22,
+              offset: const Offset(0, 12),
             ),
-          ),
-          Container(
-            width: 108,
-            height: 76,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.25),
-              borderRadius: BorderRadius.circular(18),
+          ],
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Today\'s Promo',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.7),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Save up to 50% on bulk deliveries',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      height: 1.2,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                ],
+              ),
             ),
-            child: Icon(icon, color: Colors.white, size: 56),
-          ),
-        ],
+            const SizedBox(width: 14),
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: const Icon(
+                Icons.local_shipping_rounded,
+                color: Colors.white,
+                size: 30,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -3390,7 +3139,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             _routeDot(const Color(0xFF16A34A)),
             Container(
               width: 2,
-              height: 30,
+              height: 24,
               margin: const EdgeInsets.symmetric(vertical: 2),
               color: const Color(0xFFE2E8F0),
             ),
@@ -3403,7 +3152,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildRouteEndpoint('Pickup', delivery['pickupAddress'] as String),
-              const SizedBox(height: 18),
+              const SizedBox(height: 14),
               _buildRouteEndpoint(
                 'Dropoff',
                 delivery['dropoffAddress'] as String,
