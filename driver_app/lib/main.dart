@@ -12,6 +12,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart' as gmaps;
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 const String configuredApiBaseUrl = String.fromEnvironment('API_BASE_URL');
 const String apiBaseUrl = configuredApiBaseUrl == ''
@@ -521,6 +522,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   double _markerBearingDeg = 0;
   gmaps.BitmapDescriptor? _vehicleBitmap;
 
+  Map<String, dynamic>? _profile;
+
   bool _isSendingLocation = false;
   bool _isLoadingDeliveries = false;
   bool _isTracking = false;
@@ -565,6 +568,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (!mounted) return;
 
     await _loadDeliveries();
+    unawaited(_loadProfile());
 
     if (!mounted) return;
 
@@ -575,6 +579,129 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         message: 'Driver opened the tracking app.',
       ),
     );
+  }
+
+  Future<void> _loadProfile() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$apiBaseUrl/driver/profile'),
+        headers: {'Authorization': 'Bearer ${widget.token}'},
+      ).timeout(apiRequestTimeout);
+
+      if (!mounted || response.statusCode != 200) return;
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      setState(() => _profile = (data['profile'] as Map).cast<String, dynamic>());
+    } catch (_) {
+      // Non-fatal: the profile tab falls back to basic info.
+    }
+  }
+
+  Future<void> _setAvailability(String status) async {
+    try {
+      final response = await http.patch(
+        Uri.parse('$apiBaseUrl/driver/availability'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${widget.token}',
+        },
+        body: jsonEncode({'status': status}),
+      ).timeout(apiRequestTimeout);
+
+      if (!mounted || response.statusCode != 200) return;
+      setState(() {
+        if (_profile != null) _profile!['availability'] = status;
+      });
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not update availability.')),
+        );
+      }
+    }
+  }
+
+  Future<void> _triggerSos() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Send emergency SOS?'),
+        content: const Text(
+          'This alerts Stan dispatch with your live location and starts a call '
+          'to emergency services.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Send SOS'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await http.post(
+        Uri.parse('$apiBaseUrl/driver/sos'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${widget.token}',
+        },
+        body: jsonEncode({
+          'latitude': _lastPosition?.latitude,
+          'longitude': _lastPosition?.longitude,
+        }),
+      ).timeout(apiRequestTimeout);
+    } catch (_) {
+      // Still attempt the call even if the alert POST fails.
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('SOS sent to dispatch.')),
+      );
+    }
+
+    // Kenya emergency line (999 / 112). Opens the dialer.
+    final dialer = Uri(scheme: 'tel', path: '999');
+    if (await canLaunchUrl(dialer)) {
+      await launchUrl(dialer);
+    }
+  }
+
+  Future<void> _openExternalNavigation(Map<String, dynamic> delivery) async {
+    final status = delivery['status'] as String?;
+    final target = status == 'assigned'
+        ? _pickupPoint(delivery)
+        : _dropoffPoint(delivery);
+
+    if (target == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No coordinates available for navigation.')),
+        );
+      }
+      return;
+    }
+
+    final url = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1'
+      '&destination=${target.latitude},${target.longitude}'
+      '&travelmode=driving',
+    );
+
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open a maps app.')),
+      );
+    }
   }
 
   @override
@@ -1722,6 +1849,29 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Material(
+            color: const Color(0xFFDC2626),
+            shape: const CircleBorder(),
+            elevation: 8,
+            child: IconButton(
+              onPressed: () => unawaited(_triggerSos()),
+              icon: const Icon(Icons.sos_rounded, color: Colors.white),
+              tooltip: 'Emergency SOS',
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (_selectedDelivery != null)
+            Material(
+              color: Colors.white,
+              shape: const CircleBorder(),
+              elevation: 8,
+              child: IconButton(
+                onPressed: () => unawaited(_openExternalNavigation(_selectedDelivery!)),
+                icon: const Icon(Icons.navigation_outlined),
+                tooltip: 'Navigate in Maps',
+              ),
+            ),
+          if (_selectedDelivery != null) const SizedBox(height: 12),
+          Material(
             color: Colors.white,
             shape: const CircleBorder(),
             elevation: 8,
@@ -2785,43 +2935,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       subtitle: 'Driver account, vehicle, and app status.',
       child: Column(
         children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: stanDark,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Row(
-              children: [
-                _buildDriverAvatar(66),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        widget.fullName,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${widget.role.toUpperCase()} • Stan active',
-                        style: const TextStyle(
-                          color: stanMuted,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+          _buildProfileHeader(),
+          const SizedBox(height: 14),
+          _buildAvailabilityRow(),
           const SizedBox(height: 16),
           Row(
             children: [
@@ -2867,27 +2983,41 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 ),
                 _buildMenuDivider(),
                 _buildMenuRow(
+                  Icons.description_outlined,
+                  'Documents',
+                  'Licence, NTSA, PSV, insurance, inspection',
+                  onTap: _openDocuments,
+                ),
+                _buildMenuDivider(),
+                _buildMenuRow(
                   Icons.directions_car_outlined,
                   'Vehicle',
-                  'Bike • Car • Truck',
+                  _profile?['vehicle'] != null
+                      ? '${_profile!['vehicle']['plateNumber']} · ${_profile!['vehicle']['vehicleType']}'
+                      : 'Vehicle details',
+                  onTap: _openVehicle,
                 ),
                 _buildMenuDivider(),
                 _buildMenuRow(
-                  Icons.notifications_none_rounded,
-                  'Notifications',
-                  'Pickup alerts and route changes',
-                ),
-                _buildMenuDivider(),
-                _buildMenuRow(
-                  Icons.location_on_outlined,
-                  'Tracking',
-                  _isTracking ? 'Live — sharing GPS' : 'Off — open a shipment to start',
+                  Icons.manage_accounts_outlined,
+                  'Account settings',
+                  'Phone, email, login details',
+                  onTap: _openAccount,
                 ),
                 _buildMenuDivider(),
                 _buildMenuRow(
                   Icons.help_outline_rounded,
-                  'Help & support',
-                  'Contact Stan dispatch',
+                  'Help hub',
+                  'FAQs, fares, safety, lost items',
+                  onTap: _openHelp,
+                ),
+                _buildMenuDivider(),
+                _buildMenuRow(
+                  Icons.emergency_outlined,
+                  'Emergency SOS',
+                  'Alert dispatch + call for help',
+                  onTap: _triggerSos,
+                  iconColor: const Color(0xFFDC2626),
                 ),
               ],
             ),
@@ -2926,6 +3056,141 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   void _stopTrackingTimerOnly() {
     _trackingTimer?.cancel();
     _trackingTimer = null;
+  }
+
+  Widget _buildProfileHeader() {
+    final rating = (_profile?['rating'] as num?)?.toDouble() ?? 5.0;
+    final tier = _profile?['tier'] as String? ?? 'Bronze';
+    final bio = _profile?['bio'] as String?;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: stanDark,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _buildDriverAvatar(64),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.fullName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 19,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        const Icon(Icons.star_rounded, color: Color(0xFFFBBF24), size: 16),
+                        const SizedBox(width: 4),
+                        Text(
+                          rating.toStringAsFixed(1),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            '$tier · Stan Pro',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.3,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (bio != null && bio.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Text(
+              bio,
+              style: const TextStyle(
+                color: stanMuted,
+                fontSize: 13,
+                height: 1.4,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAvailabilityRow() {
+    final current = _profile?['availability'] as String? ?? 'offline';
+    return Row(
+      children: [
+        Expanded(child: _buildAvailabilityChip('Online', 'online', const Color(0xFF16A34A), current)),
+        const SizedBox(width: 10),
+        Expanded(child: _buildAvailabilityChip('On break', 'break', const Color(0xFFF59E0B), current)),
+        const SizedBox(width: 10),
+        Expanded(child: _buildAvailabilityChip('Offline', 'offline', const Color(0xFF64748B), current)),
+      ],
+    );
+  }
+
+  Widget _buildAvailabilityChip(String label, String value, Color color, String current) {
+    final selected = current == value;
+    return InkWell(
+      onTap: () => unawaited(_setAvailability(value)),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 11),
+        decoration: BoxDecoration(
+          color: selected ? color.withValues(alpha: 0.12) : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: selected ? color : const Color(0xFFE2E8F0)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? color : stanMuted,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildStatTile(String value, String label, IconData icon) {
@@ -3027,6 +3292,39 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       MaterialPageRoute(
         builder: (_) => WalletScreen(token: widget.token, phone: widget.phone),
       ),
+    );
+  }
+
+  void _openDocuments() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => DocumentsScreen(token: widget.token)),
+    );
+  }
+
+  void _openVehicle() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => VehicleScreen(vehicle: _profile?['vehicle'] as Map<String, dynamic>?),
+      ),
+    );
+  }
+
+  Future<void> _openAccount() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AccountSettingsScreen(
+          token: widget.token,
+          phone: _profile?['phone'] as String? ?? widget.phone,
+          email: _profile?['email'] as String?,
+        ),
+      ),
+    );
+    unawaited(_loadProfile());
+  }
+
+  void _openHelp() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const HelpHubScreen()),
     );
   }
 
@@ -4784,6 +5082,591 @@ class _WalletScreenState extends State<WalletScreen> {
               fontSize: 14,
               fontWeight: FontWeight.w900,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ===========================================================================
+// Documents
+// ===========================================================================
+
+const Map<String, String> _docTitles = {
+  'license': 'Driving licence',
+  'ntsa': 'NTSA clearance',
+  'psv': 'PSV badge',
+  'insurance': 'Insurance certificate',
+  'inspection': 'Vehicle inspection',
+};
+
+class DocumentsScreen extends StatefulWidget {
+  const DocumentsScreen({super.key, required this.token});
+
+  final String token;
+
+  @override
+  State<DocumentsScreen> createState() => _DocumentsScreenState();
+}
+
+class _DocumentsScreenState extends State<DocumentsScreen> {
+  bool _loading = true;
+  List<Map<String, dynamic>> _documents = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$apiBaseUrl/driver/documents'),
+        headers: {'Authorization': 'Bearer ${widget.token}'},
+      ).timeout(apiRequestTimeout);
+
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        setState(() {
+          _documents = (data['documents'] as List)
+              .map((e) => (e as Map).cast<String, dynamic>())
+              .toList();
+        });
+      }
+    } catch (_) {
+      // leave empty; user can retry by reopening
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  ({Color color, String label}) _statusStyle(String status) {
+    switch (status) {
+      case 'verified':
+        return (color: const Color(0xFF16A34A), label: 'VERIFIED');
+      case 'pending':
+        return (color: const Color(0xFFF59E0B), label: 'PENDING');
+      case 'expired':
+        return (color: const Color(0xFFDC2626), label: 'EXPIRED');
+      default:
+        return (color: const Color(0xFF94A3B8), label: 'MISSING');
+    }
+  }
+
+  Future<void> _updateDocument(Map<String, dynamic> doc) async {
+    final docType = doc['docType'] as String;
+    final numberController =
+        TextEditingController(text: doc['docNumber'] as String? ?? '');
+    final expiryController = TextEditingController(
+      text: (doc['expiryDate'] as String?)?.split('T').first ?? '',
+    );
+
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (sheetContext) {
+        var busy = false;
+        return StatefulBuilder(
+          builder: (sheetContext, setSheet) {
+            Future<void> submit() async {
+              if (numberController.text.trim().isEmpty) return;
+              setSheet(() => busy = true);
+              try {
+                final response = await http.patch(
+                  Uri.parse('$apiBaseUrl/driver/documents/$docType'),
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ${widget.token}',
+                  },
+                  body: jsonEncode({
+                    'docNumber': numberController.text.trim(),
+                    'expiryDate': expiryController.text.trim().isEmpty
+                        ? null
+                        : expiryController.text.trim(),
+                  }),
+                ).timeout(apiRequestTimeout);
+                if (sheetContext.mounted && response.statusCode == 200) {
+                  Navigator.of(sheetContext).pop(true);
+                  return;
+                }
+              } catch (_) {/* fall through */}
+              if (sheetContext.mounted) setSheet(() => busy = false);
+            }
+
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                24, 20, 24, 20 + MediaQuery.of(sheetContext).viewInsets.bottom,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    _docTitles[docType] ?? docType,
+                    style: const TextStyle(color: stanDark, fontSize: 18, fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Submitting auto-verifies in this demo.',
+                    style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: numberController,
+                    decoration: InputDecoration(
+                      labelText: 'Document number',
+                      filled: true,
+                      fillColor: stanSurface,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: expiryController,
+                    decoration: InputDecoration(
+                      labelText: 'Expiry date (YYYY-MM-DD, optional)',
+                      filled: true,
+                      fillColor: stanSurface,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: busy ? null : submit,
+                    child: Text(busy ? 'Submitting…' : 'Submit document'),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (saved == true && mounted) {
+      setState(() => _loading = true);
+      await _load();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: stanSurface,
+      appBar: AppBar(
+        backgroundColor: stanDark,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        title: const Text('Documents', style: TextStyle(fontWeight: FontWeight.w900)),
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.all(20),
+              children: _documents.map(_buildDocCard).toList(),
+            ),
+    );
+  }
+
+  Widget _buildDocCard(Map<String, dynamic> doc) {
+    final status = doc['status'] as String? ?? 'missing';
+    final style = _statusStyle(status);
+    final number = doc['docNumber'] as String?;
+    final expiry = (doc['expiryDate'] as String?)?.split('T').first;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _docTitles[doc['docType']] ?? doc['docType'] as String,
+                  style: const TextStyle(color: stanDark, fontSize: 15, fontWeight: FontWeight.w900),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: style.color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  style.label,
+                  style: TextStyle(color: style.color, fontSize: 10.5, fontWeight: FontWeight.w900, letterSpacing: 0.4),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            number == null ? 'Not on file' : 'No. $number',
+            style: const TextStyle(color: Color(0xFF475569), fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+          if (expiry != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                'Expires $expiry',
+                style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12.5),
+              ),
+            ),
+          const SizedBox(height: 12),
+          OutlinedButton(
+            onPressed: () => unawaited(_updateDocument(doc)),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: stanDark,
+              side: const BorderSide(color: Color(0xFFCBD5E1)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: Text(
+              status == 'missing' ? 'Upload' : 'Update',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ===========================================================================
+// Vehicle
+// ===========================================================================
+
+class VehicleScreen extends StatelessWidget {
+  const VehicleScreen({super.key, required this.vehicle});
+
+  final Map<String, dynamic>? vehicle;
+
+  @override
+  Widget build(BuildContext context) {
+    final plate = vehicle?['plateNumber'] as String?;
+    final type = vehicle?['vehicleType'] as String?;
+
+    return Scaffold(
+      backgroundColor: stanSurface,
+      appBar: AppBar(
+        backgroundColor: stanDark,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        title: const Text('Vehicle', style: TextStyle(fontWeight: FontWeight.w900)),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: stanDark.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(Icons.local_shipping_outlined, color: stanDark),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        plate ?? 'No vehicle assigned',
+                        style: const TextStyle(color: stanDark, fontSize: 18, fontWeight: FontWeight.w900),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        type ?? 'Contact dispatch to assign one',
+                        style: const TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          const Text(
+            'Vehicle assignment is managed by Stan dispatch. Contact the office to '
+            'change or add a vehicle.',
+            style: TextStyle(color: Color(0xFF64748B), height: 1.5),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ===========================================================================
+// Account settings
+// ===========================================================================
+
+class AccountSettingsScreen extends StatefulWidget {
+  const AccountSettingsScreen({
+    super.key,
+    required this.token,
+    required this.phone,
+    required this.email,
+  });
+
+  final String token;
+  final String phone;
+  final String? email;
+
+  @override
+  State<AccountSettingsScreen> createState() => _AccountSettingsScreenState();
+}
+
+class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
+  late final TextEditingController _phone =
+      TextEditingController(text: widget.phone);
+  late final TextEditingController _email =
+      TextEditingController(text: widget.email ?? '');
+  bool _saving = false;
+  String? _message;
+
+  Future<void> _save() async {
+    setState(() {
+      _saving = true;
+      _message = null;
+    });
+    try {
+      final response = await http.patch(
+        Uri.parse('$apiBaseUrl/driver/account'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${widget.token}',
+        },
+        body: jsonEncode({'phone': _phone.text.trim(), 'email': _email.text.trim()}),
+      ).timeout(apiRequestTimeout);
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      if (!mounted) return;
+      setState(() => _message = data['message'] as String? ?? 'Saved.');
+    } catch (_) {
+      if (mounted) setState(() => _message = 'Could not reach the server.');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: stanSurface,
+      appBar: AppBar(
+        backgroundColor: stanDark,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        title: const Text('Account settings', style: TextStyle(fontWeight: FontWeight.w900)),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          _field('Phone number', _phone, TextInputType.phone),
+          const SizedBox(height: 14),
+          _field('Email', _email, TextInputType.emailAddress),
+          const SizedBox(height: 20),
+          FilledButton(
+            onPressed: _saving ? null : _save,
+            child: Text(_saving ? 'Saving…' : 'Save changes'),
+          ),
+          if (_message != null) ...[
+            const SizedBox(height: 14),
+            Text(
+              _message!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: stanDark, fontWeight: FontWeight.w700),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _field(String label, TextEditingController controller, TextInputType type) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: stanDark, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 6),
+        TextField(
+          controller: controller,
+          keyboardType: type,
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: Colors.white,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ===========================================================================
+// Help hub
+// ===========================================================================
+
+class HelpHubScreen extends StatefulWidget {
+  const HelpHubScreen({super.key});
+
+  @override
+  State<HelpHubScreen> createState() => _HelpHubScreenState();
+}
+
+class _HelpHubScreenState extends State<HelpHubScreen> {
+  static const List<({String q, String a})> _faqs = [
+    (
+      q: 'How do I get paid?',
+      a: 'Completed deliveries credit your Stan wallet (fare minus the Stan service fee, plus tips). Cash out to M-Pesa any time from Earnings & Wallet. Payments are demo-only in this build.',
+    ),
+    (
+      q: 'How do I collect payment from a customer?',
+      a: 'When completing a delivery, choose Cash or M-Pesa. M-Pesa sends an STK push to the customer to approve on their phone (simulated in this demo).',
+    ),
+    (
+      q: 'What is the handover PIN?',
+      a: 'A 4-digit code the customer gives you at drop-off to confirm the right person received the parcel. Enter it to complete the delivery.',
+    ),
+    (
+      q: 'How do I update my documents?',
+      a: 'Open Profile → Documents and submit your licence, NTSA clearance, PSV badge, insurance, and inspection details.',
+    ),
+    (
+      q: 'My GPS / location is not updating',
+      a: 'Make sure location services are on and Stan has location permission. Open a shipment to start live tracking.',
+    ),
+    (
+      q: 'How does the SOS button work?',
+      a: 'SOS alerts Stan dispatch with your live location and opens a call to emergency services (999 / 112). Use it only in a real emergency.',
+    ),
+    (
+      q: 'A customer left an item / lost property',
+      a: 'Contact Stan dispatch through this Help hub with the tracking number so the team can coordinate return.',
+    ),
+  ];
+
+  String _query = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final query = _query.trim().toLowerCase();
+    final results = query.isEmpty
+        ? _faqs
+        : _faqs
+            .where((f) => f.q.toLowerCase().contains(query) || f.a.toLowerCase().contains(query))
+            .toList();
+
+    return Scaffold(
+      backgroundColor: stanSurface,
+      appBar: AppBar(
+        backgroundColor: stanDark,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        title: const Text('Help hub', style: TextStyle(fontWeight: FontWeight.w900)),
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: TextField(
+              onChanged: (value) => setState(() => _query = value),
+              decoration: InputDecoration(
+                hintText: 'Search help (fares, PIN, GPS, documents…)',
+                prefixIcon: const Icon(Icons.search),
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: results.isEmpty
+                ? const Center(
+                    child: Text('No results. Try different words.',
+                        style: TextStyle(color: Color(0xFF64748B))),
+                  )
+                : ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    children: results
+                        .map((f) => Container(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                              ),
+                              child: ExpansionTile(
+                                shape: const Border(),
+                                title: Text(
+                                  f.q,
+                                  style: const TextStyle(
+                                    color: stanDark,
+                                    fontSize: 14.5,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                                children: [
+                                  Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Text(
+                                      f.a,
+                                      style: const TextStyle(
+                                        color: Color(0xFF475569),
+                                        height: 1.5,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ))
+                        .toList(),
+                  ),
           ),
         ],
       ),
