@@ -63,6 +63,11 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  # Vehicle category art — Microsoft Fluent Emoji (MIT licensed).
+  # Source: https://github.com/microsoft/fluentui-emoji
+  assets:
+    - assets/vehicles/
+
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg

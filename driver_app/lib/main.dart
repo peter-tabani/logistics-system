@@ -1905,21 +1905,24 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               children: [
                 Expanded(
                   child: _buildTransportCard(
-                    icon: Icons.two_wheeler,
+                    asset: 'assets/vehicles/bike.png',
+                    fallbackIcon: Icons.two_wheeler,
                     label: 'Bike',
                   ),
                 ),
                 const SizedBox(width: 18),
                 Expanded(
                   child: _buildTransportCard(
-                    icon: Icons.local_shipping,
+                    asset: 'assets/vehicles/truck.png',
+                    fallbackIcon: Icons.local_shipping,
                     label: 'Truck',
                   ),
                 ),
                 const SizedBox(width: 18),
                 Expanded(
                   child: _buildTransportCard(
-                    icon: Icons.directions_car,
+                    asset: 'assets/vehicles/car.png',
+                    fallbackIcon: Icons.directions_car,
                     label: 'Car',
                   ),
                 ),
@@ -2061,7 +2064,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     );
   }
 
-  Widget _buildTransportCard({required IconData icon, required String label}) {
+  Widget _buildTransportCard({
+    required String asset,
+    required IconData fallbackIcon,
+    required String label,
+  }) {
     return Container(
       height: 92,
       decoration: BoxDecoration(
@@ -2078,16 +2085,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: stanSurface,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Icon(icon, color: stanDark, size: 24),
+          Image.asset(
+            asset,
+            width: 46,
+            height: 46,
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.high,
+            errorBuilder: (_, _, _) =>
+                Icon(fallbackIcon, color: stanDark, size: 26),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
             label,
             style: const TextStyle(
