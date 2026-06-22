@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gmaps;
@@ -57,6 +58,10 @@ double calculateDistanceMeters(LatLng firstPoint, LatLng secondPoint) {
 }
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Draw behind the status bar and navigation bar (edge-to-edge), like modern
+  // apps. Screens then use SafeArea / insets to position content correctly.
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   runApp(const MyApp());
 }
 
@@ -1211,18 +1216,27 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final workflowStep = _workflowStep;
 
     if (workflowStep == DriverWorkflowStep.assignments) {
-      return Scaffold(
-        backgroundColor: stanSurface,
-        body: IndexedStack(
-          index: _selectedNavIndex,
-          children: [
-            _buildAssignmentsPage(context),
-            _buildShipmentsPage(context),
-            _buildMessagesPage(context),
-            _buildProfilePage(context),
-          ],
+      // Home tab has a navy header behind the status bar (light icons);
+      // the other tabs have a light header (dark icons).
+      final overlayStyle = _selectedNavIndex == 0
+          ? SystemUiOverlayStyle.light
+          : SystemUiOverlayStyle.dark;
+
+      return AnnotatedRegion<SystemUiOverlayStyle>(
+        value: overlayStyle,
+        child: Scaffold(
+          backgroundColor: stanSurface,
+          body: IndexedStack(
+            index: _selectedNavIndex,
+            children: [
+              _buildAssignmentsPage(context),
+              _buildShipmentsPage(context),
+              _buildMessagesPage(context),
+              _buildProfilePage(context),
+            ],
+          ),
+          bottomNavigationBar: _buildBottomNavigation(),
         ),
-        bottomNavigationBar: _buildBottomNavigation(),
       );
     }
 
@@ -1911,12 +1925,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
     // Single-screen layout: no vertical scrolling. The In Progress area flexes
     // to absorb remaining height so nothing overflows on smaller devices.
-    return SafeArea(
-      bottom: false,
-      child: Column(
-        children: [
-          _buildHomeHero(activeDeliveries),
-          const SizedBox(height: 14),
+    // No top SafeArea here — the navy hero paints behind the status bar and
+    // adds the status-bar inset itself.
+    return Column(
+      children: [
+        _buildHomeHero(activeDeliveries),
+        const SizedBox(height: 14),
           _buildSectionHeader('In Progress', 'See All'),
           const SizedBox(height: 10),
           Expanded(
@@ -1934,18 +1948,19 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           _buildPromoStrip(),
           const SizedBox(height: 12),
         ],
-      ),
     );
   }
 
   Widget _buildHomeHero(List<Map<String, dynamic>> activeDeliveries) {
+    final topInset = MediaQuery.of(context).padding.top;
+
     return SizedBox(
-      height: 278,
+      height: 278 + topInset,
       child: Stack(
         children: [
           Container(
-            height: 232,
-            padding: const EdgeInsets.fromLTRB(24, 14, 24, 66),
+            height: 232 + topInset,
+            padding: EdgeInsets.fromLTRB(24, 14 + topInset, 24, 66),
             decoration: const BoxDecoration(
               color: stanDark,
               borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
@@ -2490,8 +2505,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     ];
 
     return Container(
-      height: 78,
-      padding: const EdgeInsets.fromLTRB(24, 8, 24, 14),
       decoration: BoxDecoration(
         color: Colors.white,
         boxShadow: [
@@ -2502,16 +2515,23 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           ),
         ],
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          for (var index = 0; index < items.length; index++)
-            _buildBottomNavigationItem(
-              icon: items[index].$1,
-              label: items[index].$2,
-              index: index,
-            ),
-        ],
+      // Keep the bar clear of the system gesture / navigation buttons.
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 10, 24, 10),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              for (var index = 0; index < items.length; index++)
+                _buildBottomNavigationItem(
+                  icon: items[index].$1,
+                  label: items[index].$2,
+                  index: index,
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -2533,12 +2553,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       child: SizedBox(
         width: 66,
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
               icon,
               color: isSelected ? stanDark : const Color(0xFFB4BDC3),
-              size: 25,
+              size: 24,
             ),
             const SizedBox(height: 4),
             Text(
