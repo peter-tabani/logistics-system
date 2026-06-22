@@ -879,13 +879,22 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     }
   }
 
-  Future<void> _updateDeliveryStatus(int deliveryId, String status) async {
+  Future<bool> _updateDeliveryStatus(
+    int deliveryId,
+    String status, {
+    String? pin,
+  }) async {
     setState(() {
       _updatingDeliveryId = deliveryId;
       _statusMessage = null;
     });
 
+    var success = false;
+
     try {
+      final body = <String, dynamic>{'status': status};
+      if (pin != null) body['pin'] = pin;
+
       final response = await http
           .patch(
             Uri.parse('$apiBaseUrl/driver/deliveries/$deliveryId/status'),
@@ -893,15 +902,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               'Content-Type': 'application/json',
               'Authorization': 'Bearer ${widget.token}',
             },
-            body: jsonEncode({'status': status}),
+            body: jsonEncode(body),
           )
           .timeout(apiRequestTimeout);
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
 
-      if (!mounted) return;
+      if (!mounted) return false;
 
       if (response.statusCode == 200) {
+        success = true;
         setState(() {
           _statusMessage =
               'Delivery updated to ${formatDeliveryStatus(status)}.';
@@ -924,7 +934,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         });
       }
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted) return false;
 
       setState(() {
         _statusMessage = 'Could not update delivery. Try again.';
@@ -936,6 +946,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         });
       }
     }
+
+    return success;
   }
 
   Future<void> _startTracking() async {
@@ -1188,14 +1200,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           eventType: 'arrived_dropoff',
           severity: 'info',
           message:
-              'Driver arrived near the destination. Delivery will be completed automatically.',
+              'Driver arrived near the destination. Collect payment and the handover PIN to complete.',
           deliveryId: deliveryId,
           metadata: {
             'distanceMeters': distanceMeters.round(),
             'radiusMeters': dropoffArrivalRadiusMeters,
           },
         );
-        await _updateDeliveryStatus(deliveryId, 'delivered');
+        // Completion is no longer automatic: the driver collects payment and
+        // the customer's handover PIN via the completion flow.
       }
     }
   }
@@ -3433,6 +3446,427 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     );
   }
 
+  Widget _buildPaymentSummary(Map<String, dynamic> delivery) {
+    final fare = (delivery['fareAmount'] as num?)?.toDouble() ?? 0;
+    if (fare <= 0) return const SizedBox.shrink();
+
+    final status = delivery['paymentStatus'] as String? ?? 'pending';
+    final method = delivery['paymentMethod'] as String? ?? 'unpaid';
+    final paid = status == 'paid';
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: stanSurface,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                paid ? 'Amount paid' : 'Amount due',
+                style: const TextStyle(
+                  color: Color(0xFF64748B),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                formatKsh(fare),
+                style: const TextStyle(
+                  color: stanDark,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const Spacer(),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: paid ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              paid ? 'PAID · ${method.toUpperCase()}' : 'UNPAID',
+              style: TextStyle(
+                color: paid ? const Color(0xFF166534) : const Color(0xFF92400E),
+                fontSize: 10.5,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.4,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Completion: collect payment (if owed) -> enter handover PIN -> delivered.
+  Future<void> _startCompletion(Map<String, dynamic> delivery) async {
+    final fare = (delivery['fareAmount'] as num?)?.toDouble() ?? 0;
+    final paymentStatus = delivery['paymentStatus'] as String? ?? 'pending';
+
+    if (fare > 0 && paymentStatus != 'paid') {
+      final paid = await _showPaymentSheet(delivery);
+      if (paid != true || !mounted) return;
+    }
+
+    final completed = await _showPinSheet(delivery);
+    if (completed == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Delivery completed.')),
+      );
+    }
+  }
+
+  Future<bool> _showPaymentSheet(Map<String, dynamic> delivery) async {
+    final deliveryId = delivery['id'] as int;
+    final fare = (delivery['fareAmount'] as num?)?.toDouble() ?? 0;
+    final phoneController = TextEditingController(text: '0712 345 678');
+
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (sheetContext) {
+        var busy = false;
+        return StatefulBuilder(
+          builder: (sheetContext, setSheet) {
+            Future<void> payCash() async {
+              setSheet(() => busy = true);
+              final ok = await _collectCash(deliveryId);
+              if (!sheetContext.mounted) return;
+              if (ok) {
+                Navigator.of(sheetContext).pop(true);
+              } else {
+                setSheet(() => busy = false);
+              }
+            }
+
+            Future<void> payMpesa() async {
+              final ok = await _collectMpesa(
+                deliveryId,
+                phoneController.text.trim(),
+                fare,
+              );
+              if (!sheetContext.mounted) return;
+              if (ok) Navigator.of(sheetContext).pop(true);
+            }
+
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                24, 20, 24, 20 + MediaQuery.of(sheetContext).viewInsets.bottom,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      const Text(
+                        'Collect payment',
+                        style: TextStyle(color: stanDark, fontSize: 18, fontWeight: FontWeight.w900),
+                      ),
+                      const SizedBox(width: 8),
+                      _demoChip(),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Amount due: ${formatKsh(fare)}',
+                    style: const TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 18),
+                  TextField(
+                    controller: phoneController,
+                    keyboardType: TextInputType.phone,
+                    decoration: InputDecoration(
+                      labelText: 'Customer M-Pesa number',
+                      filled: true,
+                      fillColor: stanSurface,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  FilledButton.icon(
+                    onPressed: busy ? null : payMpesa,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF1AAE4F),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    icon: const Icon(Icons.smartphone, size: 18),
+                    label: const Text('Send M-Pesa STK push', style: TextStyle(fontWeight: FontWeight.w900)),
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: busy ? null : payCash,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: stanDark,
+                      side: const BorderSide(color: Color(0xFFCBD5E1)),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    icon: busy
+                        ? const SizedBox(
+                            width: 16, height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.payments_outlined, size: 18),
+                    label: const Text('Cash received', style: TextStyle(fontWeight: FontWeight.w900)),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    return result ?? false;
+  }
+
+  Widget _demoChip() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF3C7),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: const Text(
+        'DEMO',
+        style: TextStyle(
+          color: Color(0xFF92400E),
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+
+  Future<bool> _collectCash(int deliveryId) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$apiBaseUrl/driver/deliveries/$deliveryId/collect-payment'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${widget.token}',
+        },
+        body: jsonEncode({'method': 'cash'}),
+      ).timeout(apiRequestTimeout);
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200) {
+        await _loadDeliveries();
+        return true;
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data['message'] as String? ?? 'Could not record cash.')),
+        );
+      }
+      return false;
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not reach the server.')),
+        );
+      }
+      return false;
+    }
+  }
+
+  Future<bool> _collectMpesa(int deliveryId, String phone, double fare) async {
+    // 1. Initiate the (simulated) STK push.
+    try {
+      final response = await http.post(
+        Uri.parse('$apiBaseUrl/driver/deliveries/$deliveryId/collect-payment'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${widget.token}',
+        },
+        body: jsonEncode({'method': 'mpesa', 'customerPhone': phone}),
+      ).timeout(apiRequestTimeout);
+      if (response.statusCode != 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(data['message'] as String? ?? 'Could not start M-Pesa.')),
+          );
+        }
+        return false;
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not reach the server.')),
+        );
+      }
+      return false;
+    }
+
+    if (!mounted) return false;
+
+    // 2. Show the STK dialog; its submit confirms the (simulated) result.
+    final result = await showStkPush(
+      context,
+      title: 'M-Pesa payment',
+      phone: phone,
+      amountText: formatKsh(fare),
+      pendingNote: 'Ask the customer to enter their M-Pesa PIN on their phone.',
+      submit: () async {
+        final response = await http.post(
+          Uri.parse('$apiBaseUrl/driver/deliveries/$deliveryId/mpesa-result'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ${widget.token}',
+          },
+          body: jsonEncode({'success': true}),
+        ).timeout(apiRequestTimeout);
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (response.statusCode == 200 && data['paymentStatus'] == 'paid') {
+          return StkResult(
+            success: true,
+            reference: data['reference'] as String?,
+            message: 'Payment received from the customer.',
+          );
+        }
+        return StkResult(
+          success: false,
+          message: data['message'] as String? ?? 'M-Pesa payment failed.',
+        );
+      },
+    );
+
+    if (result != null && result.success) {
+      await _loadDeliveries();
+      return true;
+    }
+    return false;
+  }
+
+  Future<bool> _showPinSheet(Map<String, dynamic> delivery) async {
+    final deliveryId = delivery['id'] as int;
+    final demoPin = delivery['deliveryPin'] as String?;
+    final pinController = TextEditingController();
+
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (sheetContext) {
+        var busy = false;
+        String? error;
+        return StatefulBuilder(
+          builder: (sheetContext, setSheet) {
+            Future<void> submit() async {
+              final pin = pinController.text.trim();
+              if (pin.length != 4) {
+                setSheet(() => error = 'Enter the 4-digit handover PIN.');
+                return;
+              }
+              setSheet(() {
+                busy = true;
+                error = null;
+              });
+              final ok = await _updateDeliveryStatus(deliveryId, 'delivered', pin: pin);
+              if (!sheetContext.mounted) return;
+              if (ok) {
+                Navigator.of(sheetContext).pop(true);
+              } else {
+                setSheet(() {
+                  busy = false;
+                  error = _statusMessage ?? 'Incorrect PIN. Try again.';
+                });
+              }
+            }
+
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                24, 20, 24, 20 + MediaQuery.of(sheetContext).viewInsets.bottom,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Handover PIN',
+                    style: TextStyle(color: stanDark, fontSize: 18, fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Ask the customer for their 4-digit code to confirm handover.',
+                    style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w600, height: 1.4),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: pinController,
+                    keyboardType: TextInputType.number,
+                    maxLength: 4,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, letterSpacing: 8),
+                    decoration: InputDecoration(
+                      counterText: '',
+                      hintText: '••••',
+                      filled: true,
+                      fillColor: stanSurface,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                  if (demoPin != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'Demo PIN: $demoPin',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Color(0xFF94A3B8),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                  if (error != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      error!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: busy ? null : submit,
+                    child: Text(busy ? 'Confirming…' : 'Complete delivery'),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    return result ?? false;
+  }
+
   Widget _buildLiveTrackingStep(BuildContext context) {
     final delivery = _selectedDelivery;
 
@@ -3479,6 +3913,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         _buildMiniStepper(status),
         const SizedBox(height: 20),
         _buildRouteConnector(delivery),
+        const SizedBox(height: 16),
+        _buildPaymentSummary(delivery),
         if (_statusMessage != null) ...[
           const SizedBox(height: 16),
           Text(_statusMessage!),
@@ -3488,7 +3924,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           FilledButton(
             onPressed: isUpdating
                 ? null
-                : () => _updateDeliveryStatus(deliveryId, nextStatus),
+                : () {
+                    if (isInTransit) {
+                      unawaited(_startCompletion(delivery));
+                    } else {
+                      unawaited(_updateDeliveryStatus(deliveryId, nextStatus));
+                    }
+                  },
             child: Text(isUpdating ? 'Updating...' : primaryLabel),
           ),
         if (isInTransit) ...[
