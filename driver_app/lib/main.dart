@@ -285,6 +285,7 @@ class _LoginScreenState extends State<LoginScreen> {
               fullName: user['fullName'] as String,
               role: user['role'] as String,
               token: data['token'] as String,
+              phone: user['phone'] as String? ?? '',
             ),
           ),
         );
@@ -492,11 +493,13 @@ class DriverHomeScreen extends StatefulWidget {
     required this.fullName,
     required this.role,
     required this.token,
+    required this.phone,
   });
 
   final String fullName;
   final String role;
   final String token;
+  final String phone;
 
   @override
   State<DriverHomeScreen> createState() => _DriverHomeScreenState();
@@ -2844,6 +2847,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             child: Column(
               children: [
                 _buildMenuRow(
+                  Icons.account_balance_wallet_outlined,
+                  'Earnings & Wallet',
+                  'Balance, payouts, M-Pesa cash-out',
+                  onTap: _openWallet,
+                ),
+                _buildMenuDivider(),
+                _buildMenuRow(
                   Icons.directions_car_outlined,
                   'Vehicle',
                   'Bike • Car • Truck',
@@ -2940,52 +2950,69 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     );
   }
 
-  Widget _buildMenuRow(IconData icon, String title, String subtitle) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-      child: Row(
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: stanSurface,
-              borderRadius: BorderRadius.circular(14),
+  Widget _buildMenuRow(
+    IconData icon,
+    String title,
+    String subtitle, {
+    VoidCallback? onTap,
+    Color? iconColor,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: (iconColor ?? stanDark).withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(icon, color: iconColor ?? stanDark, size: 20),
             ),
-            child: Icon(icon, color: stanDark, size: 20),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: stanDark,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: stanDark,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: stanMuted,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: stanMuted,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const Icon(
-            Icons.chevron_right_rounded,
-            color: Color(0xFFB4BDC3),
-          ),
-        ],
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: Color(0xFFB4BDC3),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openWallet() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => WalletScreen(token: widget.token, phone: widget.phone),
       ),
     );
   }
@@ -3629,6 +3656,694 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           fontWeight: FontWeight.w900,
           letterSpacing: 0.5,
         ),
+      ),
+    );
+  }
+}
+
+// ===========================================================================
+// Shared helpers + DEMO M-Pesa STK-push simulation
+// ===========================================================================
+
+String formatKsh(num amount) {
+  final whole = amount.round().abs();
+  final digits = whole.toString();
+  final buffer = StringBuffer();
+  for (var i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 == 0) buffer.write(',');
+    buffer.write(digits[i]);
+  }
+  return '${amount < 0 ? '-' : ''}Ksh $buffer';
+}
+
+String shortDate(String? iso) {
+  final date = iso == null ? null : DateTime.tryParse(iso)?.toLocal();
+  if (date == null) return '';
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
+  final minute = date.minute.toString().padLeft(2, '0');
+  final period = date.hour < 12 ? 'AM' : 'PM';
+  return '${months[date.month - 1]} ${date.day}, $hour:$minute $period';
+}
+
+class StkResult {
+  const StkResult({required this.success, this.reference, required this.message});
+
+  final bool success;
+  final String? reference;
+  final String message;
+}
+
+/// Reusable DEMO M-Pesa STK-push dialog. Shows the "approve on your phone"
+/// prompt, waits (simulating PIN entry), then runs [submit] and shows the
+/// result. Returns the [StkResult] via Navigator.pop. NOT a real Daraja call.
+class StkPushDialog extends StatefulWidget {
+  const StkPushDialog({
+    super.key,
+    required this.title,
+    required this.phone,
+    required this.amountText,
+    required this.pendingNote,
+    required this.submit,
+  });
+
+  final String title;
+  final String phone;
+  final String amountText;
+  final String pendingNote;
+  final Future<StkResult> Function() submit;
+
+  @override
+  State<StkPushDialog> createState() => _StkPushDialogState();
+}
+
+class _StkPushDialogState extends State<StkPushDialog> {
+  bool _processing = true;
+  StkResult? _result;
+
+  static const Color _mpesaGreen = Color(0xFF1AAE4F);
+
+  @override
+  void initState() {
+    super.initState();
+    _run();
+  }
+
+  Future<void> _run() async {
+    // Simulate the customer/driver receiving the prompt and entering their PIN.
+    await Future.delayed(const Duration(milliseconds: 3500));
+
+    StkResult result;
+    try {
+      result = await widget.submit();
+    } catch (_) {
+      result = const StkResult(
+        success: false,
+        message: 'Could not reach the server. Please try again.',
+      );
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _processing = false;
+      _result = result;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: _processing ? _buildProcessing() : _buildResult(),
+      ),
+    );
+  }
+
+  Widget _buildDemoChip() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF3C7),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: const Text(
+        'DEMO',
+        style: TextStyle(
+          color: Color(0xFF92400E),
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProcessing() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 64,
+          height: 64,
+          decoration: BoxDecoration(
+            color: _mpesaGreen.withValues(alpha: 0.12),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(Icons.smartphone, color: _mpesaGreen, size: 30),
+        ),
+        const SizedBox(height: 18),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              widget.title,
+              style: const TextStyle(
+                color: stanDark,
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(width: 8),
+            _buildDemoChip(),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'STK push sent to ${widget.phone}',
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: Color(0xFF475569), fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          widget.amountText,
+          style: const TextStyle(
+            color: stanDark,
+            fontSize: 22,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 18),
+        const SizedBox(
+          width: 22,
+          height: 22,
+          child: CircularProgressIndicator(strokeWidth: 2.4, color: _mpesaGreen),
+        ),
+        const SizedBox(height: 14),
+        Text(
+          widget.pendingNote,
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: Color(0xFF64748B), fontSize: 13, height: 1.4),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildResult() {
+    final result = _result!;
+    final color = result.success ? _mpesaGreen : const Color(0xFFDC2626);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 64,
+          height: 64,
+          decoration: BoxDecoration(color: color.withValues(alpha: 0.12), shape: BoxShape.circle),
+          child: Icon(
+            result.success ? Icons.check_rounded : Icons.close_rounded,
+            color: color,
+            size: 34,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          result.success ? 'Payment successful' : 'Payment not completed',
+          style: const TextStyle(color: stanDark, fontSize: 18, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          result.message,
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: Color(0xFF64748B), height: 1.4),
+        ),
+        if (result.success && result.reference != null) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: stanSurface,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              'M-Pesa ref: ${result.reference}  ·  DEMO',
+              style: const TextStyle(
+                color: stanDark,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(height: 20),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            onPressed: () => Navigator.of(context).pop(result),
+            child: const Text('Done'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+Future<StkResult?> showStkPush(
+  BuildContext context, {
+  required String title,
+  required String phone,
+  required String amountText,
+  required String pendingNote,
+  required Future<StkResult> Function() submit,
+}) {
+  return showDialog<StkResult>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => StkPushDialog(
+      title: title,
+      phone: phone,
+      amountText: amountText,
+      pendingNote: pendingNote,
+      submit: submit,
+    ),
+  );
+}
+
+// ===========================================================================
+// Wallet & earnings
+// ===========================================================================
+
+class WalletScreen extends StatefulWidget {
+  const WalletScreen({super.key, required this.token, required this.phone});
+
+  final String token;
+  final String phone;
+
+  @override
+  State<WalletScreen> createState() => _WalletScreenState();
+}
+
+class _WalletScreenState extends State<WalletScreen> {
+  bool _loading = true;
+  String? _error;
+  double _balance = 0;
+  Map<String, dynamic> _today = const {};
+  Map<String, dynamic> _week = const {};
+  List<Map<String, dynamic>> _transactions = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final response = await http.get(
+        Uri.parse('$apiBaseUrl/driver/earnings'),
+        headers: {'Authorization': 'Bearer ${widget.token}'},
+      ).timeout(apiRequestTimeout);
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        setState(() {
+          _balance = (data['balance'] as num).toDouble();
+          _today = (data['today'] as Map).cast<String, dynamic>();
+          _week = (data['week'] as Map).cast<String, dynamic>();
+          _transactions = (data['transactions'] as List)
+              .map((e) => (e as Map).cast<String, dynamic>())
+              .toList();
+        });
+      } else {
+        setState(() => _error = data['message'] as String? ?? 'Could not load earnings.');
+      }
+    } catch (_) {
+      if (mounted) setState(() => _error = 'Could not connect to load earnings.');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _startCashOut() async {
+    if (_balance <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No balance available to cash out.')),
+      );
+      return;
+    }
+
+    final controller = TextEditingController(text: _balance.round().toString());
+
+    final amount = await showModalBottomSheet<double>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (sheetContext) {
+        return Padding(
+          padding: EdgeInsets.fromLTRB(
+            24, 20, 24, 20 + MediaQuery.of(sheetContext).viewInsets.bottom,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Cash out to M-Pesa',
+                style: TextStyle(color: stanDark, fontSize: 18, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Sent to ${widget.phone} · DEMO',
+                style: const TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: 'Amount (Ksh)',
+                  filled: true,
+                  fillColor: stanSurface,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: () {
+                  final value = double.tryParse(controller.text.trim());
+                  if (value == null || value <= 0) return;
+                  Navigator.of(sheetContext).pop(value);
+                },
+                child: const Text('Send to M-Pesa'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (amount == null || !mounted) return;
+
+    final result = await showStkPush(
+      context,
+      title: 'M-Pesa cash-out',
+      phone: widget.phone,
+      amountText: formatKsh(amount),
+      pendingNote: 'Authorize the withdrawal with your M-Pesa PIN on your phone.',
+      submit: () async {
+        final response = await http.post(
+          Uri.parse('$apiBaseUrl/driver/wallet/cashout'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ${widget.token}',
+          },
+          body: jsonEncode({'amount': amount}),
+        ).timeout(apiRequestTimeout);
+
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (response.statusCode == 200) {
+          return StkResult(
+            success: true,
+            reference: data['reference'] as String?,
+            message: '${formatKsh(amount)} sent to your M-Pesa.',
+          );
+        }
+        return StkResult(
+          success: false,
+          message: data['message'] as String? ?? 'Cash-out failed.',
+        );
+      },
+    );
+
+    if (result != null && result.success && mounted) {
+      await _load();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: stanSurface,
+      appBar: AppBar(
+        backgroundColor: stanDark,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        title: const Text('Earnings & Wallet', style: TextStyle(fontWeight: FontWeight.w900)),
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? _buildError()
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView(
+                    padding: const EdgeInsets.all(20),
+                    children: [
+                      _buildBalanceCard(),
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          Expanded(child: _buildPeriodCard('Today', _today)),
+                          const SizedBox(width: 12),
+                          Expanded(child: _buildPeriodCard('This week', _week)),
+                        ],
+                      ),
+                      const SizedBox(height: 22),
+                      const Text(
+                        'Recent transactions',
+                        style: TextStyle(color: stanDark, fontSize: 16, fontWeight: FontWeight.w900),
+                      ),
+                      const SizedBox(height: 10),
+                      if (_transactions.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 20),
+                          child: Text(
+                            'No transactions yet.',
+                            style: TextStyle(color: Color(0xFF64748B)),
+                          ),
+                        )
+                      else
+                        ..._transactions.map(_buildTransactionRow),
+                    ],
+                  ),
+                ),
+    );
+  }
+
+  Widget _buildError() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(_error!, textAlign: TextAlign.center),
+            const SizedBox(height: 16),
+            FilledButton(onPressed: _load, child: const Text('Retry')),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBalanceCard() {
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(colors: [stanDark, stanPanel]),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Wallet balance',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.7),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'DEMO',
+                  style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w900),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            formatKsh(_balance),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 34,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _startCashOut,
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: stanDark,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              icon: const Icon(Icons.account_balance_wallet_outlined, size: 18),
+              label: const Text('Cash out to M-Pesa', style: TextStyle(fontWeight: FontWeight.w900)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPeriodCard(String label, Map<String, dynamic> data) {
+    final net = (data['net'] as num? ?? 0).toDouble();
+    final gross = (data['gross'] as num? ?? 0).toDouble();
+    final fee = (data['fee'] as num? ?? 0).toDouble();
+    final tips = (data['tips'] as num? ?? 0).toDouble();
+    final trips = (data['trips'] as num? ?? 0).toInt();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(color: Color(0xFF64748B), fontSize: 12, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            formatKsh(net),
+            style: const TextStyle(color: stanDark, fontSize: 20, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '$trips ${trips == 1 ? 'trip' : 'trips'} · net',
+            style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11, fontWeight: FontWeight.w700),
+          ),
+          const Divider(height: 18),
+          _miniRow('Gross', formatKsh(gross)),
+          _miniRow('Stan fee', '-${formatKsh(fee)}'),
+          _miniRow('Tips', formatKsh(tips)),
+        ],
+      ),
+    );
+  }
+
+  Widget _miniRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
+          Text(
+            value,
+            style: const TextStyle(color: stanDark, fontSize: 12.5, fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTransactionRow(Map<String, dynamic> txn) {
+    final type = txn['type'] as String? ?? 'earning';
+    final amount = (txn['amount'] as num? ?? 0).toDouble();
+    final isCredit = amount >= 0;
+
+    IconData icon;
+    Color color;
+    switch (type) {
+      case 'payout':
+        icon = Icons.north_east_rounded;
+        color = const Color(0xFFDC2626);
+        break;
+      case 'tip':
+        icon = Icons.volunteer_activism_outlined;
+        color = const Color(0xFFF59E0B);
+        break;
+      default:
+        icon = Icons.south_west_rounded;
+        color = const Color(0xFF16A34A);
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  type == 'payout'
+                      ? 'M-Pesa cash-out'
+                      : type == 'tip'
+                          ? 'Customer tip'
+                          : 'Delivery earning',
+                  style: const TextStyle(color: stanDark, fontSize: 14, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  shortDate(txn['createdAt'] as String?),
+                  style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            '${isCredit ? '+' : ''}${formatKsh(amount)}',
+            style: TextStyle(
+              color: isCredit ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
       ),
     );
   }
