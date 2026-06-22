@@ -6,7 +6,32 @@ demo-prep build is done and validated.
 
 ---
 
-## 0. Google Maps API key  ·  optional (app works on free OpenStreetMap without it)
+## 0a. Real payments (M-Pesa / Daraja)  ·  BLOCKER before charging real money
+
+All payments in Stan are currently **DEMO / MOCK** — the wallet, driver
+cash-out, and customer payment collection (Cash + M-Pesa) simulate the flows but
+move **no real money**. The M-Pesa STK push is faked in the app. To make
+payments real you must provide / set up:
+
+- **Safaricom Daraja account** (https://developer.safaricom.co.ke) with:
+  - Consumer **Key** and **Secret** (sandbox first, then production)
+  - **Business Short Code** (Paybill/Till) + **Passkey** for Lipa na M-Pesa Online (STK push)
+  - A registered, HTTPS **callback URL** Safaricom can reach (the backend must be
+    publicly hosted with TLS — localhost won't work)
+- **Go-Live approval** from Safaricom (production access requires their review).
+- A **settlement/float** arrangement and KYC for the paybill.
+- Decisions only you can make: the **Stan service-fee %** (demo uses 15%), who
+  bears transaction costs, refund/dispute handling, and payout schedule.
+
+What I'd build once the above exists: replace the simulated
+`collect-payment` / `mpesa-result` / `wallet/cashout` with real Daraja STK-push
++ B2C calls, store credentials in `.env` (never committed), and verify
+Safaricom callbacks. I will **not** add real payment credentials or move real
+money without an explicit task + your live Daraja details.
+
+---
+
+## 0b. Google Maps API key  ·  optional (app works on free OpenStreetMap without it)
 
 You asked for Google Maps. It's now wired into both the dashboard and the driver
 app — but Google requires **your own API key + a billing account** (card on file,
