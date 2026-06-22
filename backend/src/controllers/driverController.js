@@ -14,6 +14,13 @@ function formatDelivery(row) {
     dropoffLatitude: row.dropoff_latitude === null ? null : Number(row.dropoff_latitude),
     dropoffLongitude: row.dropoff_longitude === null ? null : Number(row.dropoff_longitude),
     status: row.status,
+    fareAmount: row.fare_amount === undefined ? 0 : Number(row.fare_amount),
+    tipAmount: row.tip_amount === undefined ? 0 : Number(row.tip_amount),
+    paymentMethod: row.payment_method || "unpaid",
+    paymentStatus: row.payment_status || "pending",
+    // DEMO: the handover PIN is surfaced to the app as a demo hint. In
+    // production the customer alone would hold this code.
+    deliveryPin: row.delivery_pin || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -119,6 +126,11 @@ async function getAssignedDeliveries(req, res) {
         dropoff_latitude,
         dropoff_longitude,
         status,
+        fare_amount,
+        tip_amount,
+        payment_method,
+        payment_status,
+        delivery_pin,
         created_at,
         updated_at
       FROM deliveries
@@ -157,6 +169,24 @@ async function updateDeliveryStatus(req, res) {
     return res.status(404).json({
       message: "Driver profile was not found.",
     });
+  }
+
+  // Proof-of-delivery PIN: completing a delivery requires the customer's PIN
+  // when one is set on the delivery.
+  if (status === "delivered") {
+    const pinCheck = await pool.query(
+      `SELECT delivery_pin FROM deliveries WHERE id = $1 AND driver_id = $2 LIMIT 1`,
+      [deliveryId, driver.id]
+    );
+    const expectedPin = pinCheck.rows[0] ? pinCheck.rows[0].delivery_pin : null;
+    if (expectedPin) {
+      const providedPin = String(req.body.pin || "").trim();
+      if (providedPin !== expectedPin) {
+        return res.status(400).json({
+          message: "Incorrect delivery PIN. Ask the customer for their handover code.",
+        });
+      }
+    }
   }
 
   const result = await pool.query(

@@ -22,6 +22,15 @@ Stan is a logistics / fleet-tracking system with three parts:
 - Android emulator: `http://10.0.2.2:5000`
 - Real phone:       `http://<PC_LAN_IP>:5000` (passed via `--dart-define=API_BASE_URL=...`)
 
+## Payments — DEMO / MOCK ONLY (hard rule)
+Payments in Stan are **simulated**, not real. This applies to driver earnings,
+wallet cash-out, and customer payment collection (Cash and M-Pesa).
+- **No Daraja/M-Pesa API, no real credentials, no real money.** The M-Pesa
+  STK-push flow is *simulated* in the app and clearly labelled "DEMO".
+- Cash and M-Pesa both have full step-by-step flows for demonstration only.
+- Anything a real integration would need is tracked in `docs/NEEDS_FROM_OWNER.md`.
+- Do not add real payment gateways/credentials without an explicit task to do so.
+
 ## Working agreement — follow this on EVERY task
 1. Work in small, complete steps. After each finished step, commit to git with a clear message.
 2. After any change, run the matching validation before moving on:

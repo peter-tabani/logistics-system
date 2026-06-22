@@ -75,3 +75,58 @@ CREATE INDEX IF NOT EXISTS idx_driver_tracking_events_recorded
 
 CREATE INDEX IF NOT EXISTS idx_driver_tracking_events_driver_recorded
   ON driver_tracking_events(driver_id, recorded_at DESC);
+
+-- ---------------------------------------------------------------------------
+-- Driver feature set (Uber-style): payments (DEMO/MOCK only), proof-of-delivery
+-- PIN, documents, wallet. All additive and non-destructive.
+-- ---------------------------------------------------------------------------
+
+-- Delivery payment + handover PIN (DEMO payments only — see CLAUDE.md).
+ALTER TABLE deliveries
+  ADD COLUMN IF NOT EXISTS fare_amount DECIMAL(10, 2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS tip_amount DECIMAL(10, 2) NOT NULL DEFAULT 0,
+  -- payment_method: unpaid | cash | mpesa
+  ADD COLUMN IF NOT EXISTS payment_method VARCHAR(20) NOT NULL DEFAULT 'unpaid',
+  -- payment_status: pending | paid | failed
+  ADD COLUMN IF NOT EXISTS payment_status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  ADD COLUMN IF NOT EXISTS delivery_pin VARCHAR(4);
+
+-- Driver profile extras (rating + bio for the Uber-style profile).
+ALTER TABLE driver_profiles
+  ADD COLUMN IF NOT EXISTS rating DECIMAL(3, 2) NOT NULL DEFAULT 5.00,
+  ADD COLUMN IF NOT EXISTS bio TEXT;
+
+-- Compliance documents (driver's licence, NTSA clearance, PSV badge, insurance,
+-- vehicle inspection). Metadata only — no real files are stored.
+CREATE TABLE IF NOT EXISTS driver_documents (
+  id SERIAL PRIMARY KEY,
+  driver_id INTEGER NOT NULL REFERENCES driver_profiles(id) ON DELETE CASCADE,
+  doc_type VARCHAR(40) NOT NULL,
+  doc_number VARCHAR(80),
+  -- status: verified | pending | expired | missing
+  status VARCHAR(20) NOT NULL DEFAULT 'missing',
+  expiry_date DATE,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (driver_id, doc_type)
+);
+
+-- Wallet ledger. amount is positive for credits (earning/tip) and negative for
+-- payouts (cash-out). reference holds a DEMO M-Pesa receipt code where relevant.
+CREATE TABLE IF NOT EXISTS wallet_transactions (
+  id BIGSERIAL PRIMARY KEY,
+  driver_id INTEGER NOT NULL REFERENCES driver_profiles(id) ON DELETE CASCADE,
+  -- type: earning | tip | payout
+  type VARCHAR(20) NOT NULL,
+  amount DECIMAL(10, 2) NOT NULL,
+  delivery_id INTEGER REFERENCES deliveries(id) ON DELETE SET NULL,
+  -- method: cash | mpesa
+  method VARCHAR(20),
+  -- status: completed | pending | failed
+  status VARCHAR(20) NOT NULL DEFAULT 'completed',
+  reference VARCHAR(60),
+  description TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_wallet_transactions_driver_created
+  ON wallet_transactions(driver_id, created_at DESC);
