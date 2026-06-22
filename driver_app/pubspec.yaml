@@ -67,6 +67,7 @@ flutter:
   # assets/vehicles/ (see the README there). Falls back to line icons if absent.
   assets:
     - assets/vehicles/
+    - assets/profile/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

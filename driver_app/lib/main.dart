@@ -2068,7 +2068,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         ],
       ),
       clipBehavior: Clip.antiAlias,
-      child: _buildAvatarFallback(size),
+      child: Image.asset(
+        'assets/profile/avatar.png',
+        fit: BoxFit.cover,
+        width: size,
+        height: size,
+        // Until a profile photo is added, show the default avatar.
+        errorBuilder: (_, _, _) => _buildAvatarFallback(size),
+      ),
     );
   }
 
@@ -2450,16 +2457,22 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             ),
             const SizedBox(width: 14),
             Container(
-              width: 52,
-              height: 52,
+              width: 60,
+              height: 56,
+              padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.12),
+                color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(
-                Icons.local_shipping_outlined,
-                color: Colors.white,
-                size: 26,
+              child: Image.asset(
+                'assets/vehicles/truck.png',
+                fit: BoxFit.contain,
+                filterQuality: FilterQuality.high,
+                errorBuilder: (_, _, _) => const Icon(
+                  Icons.local_shipping_outlined,
+                  color: stanDark,
+                  size: 26,
+                ),
               ),
             ),
           ],
