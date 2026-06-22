@@ -26,7 +26,7 @@ const SERVICE_FEE_RATE = 0.15;
 // Active delivery: in transit, fare due, handover PIN 4827.
 const ACTIVE_DELIVERY = {
   customerName: "Westgate Pharmacy",
-  pickupAddress: "Stan Hub - Industrial Area, Nairobi",
+  pickupAddress: "Kilimani, Nairobi",
   pickupLatitude: -1.308611,
   pickupLongitude: 36.851111,
   dropoffAddress: "Westgate Mall, Westlands",
@@ -47,7 +47,7 @@ const ACTIVE_DRIVER_LOCATION = {
 const COMPLETED_DELIVERIES = [
   {
     customerName: "Sarit Centre Retail",
-    pickupAddress: "Stan Hub - Industrial Area, Nairobi",
+    pickupAddress: "Industrial Area, Nairobi",
     pickupLatitude: -1.308611,
     pickupLongitude: 36.851111,
     dropoffAddress: "Sarit Centre, Westlands",
@@ -60,7 +60,7 @@ const COMPLETED_DELIVERIES = [
   },
   {
     customerName: "Junction Mall Pharmacy",
-    pickupAddress: "Stan Hub - Industrial Area, Nairobi",
+    pickupAddress: "Lavington, Nairobi",
     pickupLatitude: -1.308611,
     pickupLongitude: 36.851111,
     dropoffAddress: "Junction Mall, Ngong Road",
@@ -73,7 +73,7 @@ const COMPLETED_DELIVERIES = [
   },
   {
     customerName: "Garden City Electronics",
-    pickupAddress: "Stan Hub - Industrial Area, Nairobi",
+    pickupAddress: "Parklands, Nairobi",
     pickupLatitude: -1.308611,
     pickupLongitude: 36.851111,
     dropoffAddress: "Garden City Mall, Thika Road",

@@ -137,7 +137,7 @@ class _SplashScreenState extends State<SplashScreen> {
               ),
               SizedBox(height: 8),
               Text(
-                'Shipping made simple',
+                'Delivery made easy',
                 style: TextStyle(
                   color: stanMuted,
                   fontSize: 15,
@@ -357,7 +357,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 34),
                       const Text(
-                        'Shipping\nMade\nSimple',
+                        'Delivery\nMade\nEasy',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 46,
@@ -523,6 +523,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   gmaps.BitmapDescriptor? _vehicleBitmap;
 
   Map<String, dynamic>? _profile;
+  List<Map<String, dynamic>> _documents = const [];
 
   bool _isSendingLocation = false;
   bool _isLoadingDeliveries = false;
@@ -583,94 +584,33 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   Future<void> _loadProfile() async {
     try {
-      final response = await http.get(
-        Uri.parse('$apiBaseUrl/driver/profile'),
-        headers: {'Authorization': 'Bearer ${widget.token}'},
-      ).timeout(apiRequestTimeout);
+      final results = await Future.wait([
+        http.get(
+          Uri.parse('$apiBaseUrl/driver/profile'),
+          headers: {'Authorization': 'Bearer ${widget.token}'},
+        ).timeout(apiRequestTimeout),
+        http.get(
+          Uri.parse('$apiBaseUrl/driver/documents'),
+          headers: {'Authorization': 'Bearer ${widget.token}'},
+        ).timeout(apiRequestTimeout),
+      ]);
 
-      if (!mounted || response.statusCode != 200) return;
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      setState(() => _profile = (data['profile'] as Map).cast<String, dynamic>());
+      if (!mounted) return;
+
+      if (results[0].statusCode == 200) {
+        final data = jsonDecode(results[0].body) as Map<String, dynamic>;
+        setState(() => _profile = (data['profile'] as Map).cast<String, dynamic>());
+      }
+      if (results[1].statusCode == 200) {
+        final data = jsonDecode(results[1].body) as Map<String, dynamic>;
+        setState(() {
+          _documents = (data['documents'] as List)
+              .map((e) => (e as Map).cast<String, dynamic>())
+              .toList();
+        });
+      }
     } catch (_) {
       // Non-fatal: the profile tab falls back to basic info.
-    }
-  }
-
-  Future<void> _setAvailability(String status) async {
-    try {
-      final response = await http.patch(
-        Uri.parse('$apiBaseUrl/driver/availability'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ${widget.token}',
-        },
-        body: jsonEncode({'status': status}),
-      ).timeout(apiRequestTimeout);
-
-      if (!mounted || response.statusCode != 200) return;
-      setState(() {
-        if (_profile != null) _profile!['availability'] = status;
-      });
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not update availability.')),
-        );
-      }
-    }
-  }
-
-  Future<void> _triggerSos() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Send emergency SOS?'),
-        content: const Text(
-          'This alerts Stan dispatch with your live location and starts a call '
-          'to emergency services.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Send SOS'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-
-    try {
-      await http.post(
-        Uri.parse('$apiBaseUrl/driver/sos'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ${widget.token}',
-        },
-        body: jsonEncode({
-          'latitude': _lastPosition?.latitude,
-          'longitude': _lastPosition?.longitude,
-        }),
-      ).timeout(apiRequestTimeout);
-    } catch (_) {
-      // Still attempt the call even if the alert POST fails.
-    }
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('SOS sent to dispatch.')),
-      );
-    }
-
-    // Kenya emergency line (999 / 112). Opens the dialer.
-    final dialer = Uri(scheme: 'tel', path: '999');
-    if (await canLaunchUrl(dialer)) {
-      await launchUrl(dialer);
     }
   }
 
@@ -1848,17 +1788,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          Material(
-            color: const Color(0xFFDC2626),
-            shape: const CircleBorder(),
-            elevation: 8,
-            child: IconButton(
-              onPressed: () => unawaited(_triggerSos()),
-              icon: const Icon(Icons.sos_rounded, color: Colors.white),
-              tooltip: 'Emergency SOS',
-            ),
-          ),
-          const SizedBox(height: 12),
           if (_selectedDelivery != null)
             Material(
               color: Colors.white,
@@ -2930,115 +2859,20 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   Widget _buildProfilePage(BuildContext context) {
-    return _buildTabPage(
-      title: 'Profile',
-      subtitle: 'Driver account, vehicle, and app status.',
-      child: Column(
+    return SafeArea(
+      bottom: false,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
         children: [
-          _buildProfileHeader(),
-          const SizedBox(height: 14),
-          _buildAvailabilityRow(),
+          _buildAccountHeader(),
+          const SizedBox(height: 24),
+          _buildQuickTiles(),
           const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _buildStatTile(
-                  '${_activeDeliveries.length}',
-                  'Active',
-                  Icons.local_shipping_outlined,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildStatTile(
-                  '${_deliveries.where((d) => d['status'] == 'delivered').length}',
-                  'Delivered',
-                  Icons.check_circle_outline,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildStatTile(
-                  _isTracking ? 'On' : 'Off',
-                  'GPS',
-                  Icons.gps_fixed,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-            ),
-            child: Column(
-              children: [
-                _buildMenuRow(
-                  Icons.account_balance_wallet_outlined,
-                  'Earnings & Wallet',
-                  'Balance, payouts, M-Pesa cash-out',
-                  onTap: _openWallet,
-                ),
-                _buildMenuDivider(),
-                _buildMenuRow(
-                  Icons.description_outlined,
-                  'Documents',
-                  'Licence, NTSA, PSV, insurance, inspection',
-                  onTap: _openDocuments,
-                ),
-                _buildMenuDivider(),
-                _buildMenuRow(
-                  Icons.directions_car_outlined,
-                  'Vehicle',
-                  _profile?['vehicle'] != null
-                      ? '${_profile!['vehicle']['plateNumber']} · ${_profile!['vehicle']['vehicleType']}'
-                      : 'Vehicle details',
-                  onTap: _openVehicle,
-                ),
-                _buildMenuDivider(),
-                _buildMenuRow(
-                  Icons.manage_accounts_outlined,
-                  'Account settings',
-                  'Phone, email, login details',
-                  onTap: _openAccount,
-                ),
-                _buildMenuDivider(),
-                _buildMenuRow(
-                  Icons.help_outline_rounded,
-                  'Help hub',
-                  'FAQs, fares, safety, lost items',
-                  onTap: _openHelp,
-                ),
-                _buildMenuDivider(),
-                _buildMenuRow(
-                  Icons.emergency_outlined,
-                  'Emergency SOS',
-                  'Alert dispatch + call for help',
-                  onTap: _triggerSos,
-                  iconColor: const Color(0xFFDC2626),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-          OutlinedButton.icon(
-            onPressed: _signOut,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xFFDC2626),
-              side: const BorderSide(color: Color(0xFFF1C7C7)),
-              padding: const EdgeInsets.symmetric(vertical: 15),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-            icon: const Icon(Icons.logout_rounded, size: 18),
-            label: const Text(
-              'Sign out',
-              style: TextStyle(fontWeight: FontWeight.w900),
-            ),
-          ),
+          _buildProTierCard(),
+          const SizedBox(height: 16),
+          _buildDocumentsCard(),
+          const SizedBox(height: 16),
+          _buildAccountList(),
           const SizedBox(height: 8),
         ],
       ),
@@ -3058,132 +2892,118 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _trackingTimer = null;
   }
 
-  Widget _buildProfileHeader() {
+  Widget _buildAccountHeader() {
     final rating = (_profile?['rating'] as num?)?.toDouble() ?? 5.0;
     final tier = _profile?['tier'] as String? ?? 'Bronze';
-    final bio = _profile?['bio'] as String?;
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: stanDark,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildDriverAvatar(64),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.fullName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 19,
-                        fontWeight: FontWeight.w900,
-                      ),
+              Text(
+                widget.fullName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: stanDark,
+                  fontSize: 26,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -0.6,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(999),
                     ),
-                    const SizedBox(height: 6),
-                    Row(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.star_rounded, color: Color(0xFFFBBF24), size: 16),
+                        const Icon(Icons.star_rounded, color: Color(0xFFFBBF24), size: 15),
                         const SizedBox(width: 4),
                         Text(
-                          rating.toStringAsFixed(1),
+                          rating.toStringAsFixed(2),
                           style: const TextStyle(
-                            color: Colors.white,
+                            color: stanDark,
                             fontSize: 13,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
-                        const SizedBox(width: 10),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.14),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            '$tier · Stan Pro',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.3,
-                            ),
-                          ),
-                        ),
                       ],
                     ),
-                  ],
-                ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: stanDark.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '$tier · Stan Pro',
+                      style: const TextStyle(
+                        color: stanDark,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
-          if (bio != null && bio.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            Text(
-              bio,
-              style: const TextStyle(
-                color: stanMuted,
-                fontSize: 13,
-                height: 1.4,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAvailabilityRow() {
-    final current = _profile?['availability'] as String? ?? 'offline';
-    return Row(
-      children: [
-        Expanded(child: _buildAvailabilityChip('Online', 'online', const Color(0xFF16A34A), current)),
-        const SizedBox(width: 10),
-        Expanded(child: _buildAvailabilityChip('On break', 'break', const Color(0xFFF59E0B), current)),
-        const SizedBox(width: 10),
-        Expanded(child: _buildAvailabilityChip('Offline', 'offline', const Color(0xFF64748B), current)),
+        ),
+        const SizedBox(width: 16),
+        _buildDriverAvatar(60),
       ],
     );
   }
 
-  Widget _buildAvailabilityChip(String label, String value, Color color, String current) {
-    final selected = current == value;
-    return InkWell(
-      onTap: () => unawaited(_setAvailability(value)),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 11),
-        decoration: BoxDecoration(
-          color: selected ? color.withValues(alpha: 0.12) : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: selected ? color : const Color(0xFFE2E8F0)),
+  Widget _buildQuickTiles() {
+    return Row(
+      children: [
+        Expanded(child: _quickTile(Icons.account_balance_wallet_rounded, 'Wallet', _openWallet)),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _quickTile(
+            Icons.receipt_long_rounded,
+            'Activity',
+            () => setState(() => _selectedNavIndex = 1),
+          ),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        const SizedBox(width: 12),
+        Expanded(child: _quickTile(Icons.directions_car_rounded, 'Vehicle', _openVehicle)),
+      ],
+    );
+  }
+
+  Widget _quickTile(IconData icon, String label, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 18),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF1F5F9),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Column(
           children: [
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-            ),
-            const SizedBox(width: 6),
+            Icon(icon, color: stanDark, size: 26),
+            const SizedBox(height: 10),
             Text(
               label,
-              style: TextStyle(
-                color: selected ? color : stanMuted,
-                fontSize: 12.5,
+              style: const TextStyle(
+                color: stanDark,
+                fontSize: 13,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -3193,35 +3013,178 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     );
   }
 
-  Widget _buildStatTile(String value, String label, IconData icon) {
+  Widget _buildProTierCard() {
+    final tier = _profile?['tier'] as String? ?? 'Bronze';
+    final completed = (_profile?['completedTrips'] as num?)?.toInt() ?? 0;
+
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(colors: [stanDark, stanPanel]),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'STAN PRO',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.65),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '$tier driver',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '$completed deliveries completed',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.7),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Icon(
+            Icons.workspace_premium_rounded,
+            color: Colors.white.withValues(alpha: 0.9),
+            size: 42,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDocumentsCard() {
+    final statusByType = <String, String>{
+      for (final doc in _documents)
+        doc['docType'] as String: doc['status'] as String? ?? 'missing',
+    };
+    const order = ['license', 'ntsa', 'psv', 'insurance', 'inspection'];
+
+    final rows = <Widget>[];
+    for (var i = 0; i < order.length; i++) {
+      final type = order[i];
+      rows.add(_buildDocRow(type, statusByType[type] ?? 'missing'));
+      if (i < order.length - 1) {
+        rows.add(const Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F8)));
+      }
+    }
+
+    return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 10),
+            child: Row(
+              children: [
+                Text(
+                  'Documents',
+                  style: TextStyle(color: stanDark, fontSize: 15, fontWeight: FontWeight.w900),
+                ),
+                Spacer(),
+                Text(
+                  'Compliance',
+                  style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12, fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F8)),
+          ...rows,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDocRow(String docType, String status) {
+    final style = _docStatusStyle(status);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              _docTitles[docType] ?? docType,
+              style: const TextStyle(color: stanDark, fontSize: 14, fontWeight: FontWeight.w700),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: style.color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              style.label,
+              style: TextStyle(
+                color: style.color,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.4,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  ({Color color, String label}) _docStatusStyle(String status) {
+    switch (status) {
+      case 'verified':
+        return (color: const Color(0xFF16A34A), label: 'VERIFIED');
+      case 'pending':
+        return (color: const Color(0xFFF59E0B), label: 'PENDING');
+      case 'expired':
+        return (color: const Color(0xFFDC2626), label: 'EXPIRED');
+      default:
+        return (color: const Color(0xFF94A3B8), label: 'MISSING');
+    }
+  }
+
+  Widget _buildAccountList() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Column(
         children: [
-          Icon(icon, color: stanDark, size: 22),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: const TextStyle(
-              color: stanDark,
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -0.5,
-            ),
+          _buildMenuRow(
+            Icons.manage_accounts_outlined,
+            'Account settings',
+            'Phone, email, login details',
+            onTap: _openAccount,
           ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: const TextStyle(
-              color: stanMuted,
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-            ),
+          _buildMenuDivider(),
+          _buildMenuRow(
+            Icons.logout_rounded,
+            'Sign out',
+            'Log out of this device',
+            onTap: _signOut,
+            iconColor: const Color(0xFFDC2626),
           ),
         ],
       ),
@@ -3295,12 +3258,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     );
   }
 
-  void _openDocuments() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => DocumentsScreen(token: widget.token)),
-    );
-  }
-
   void _openVehicle() {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -3320,12 +3277,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       ),
     );
     unawaited(_loadProfile());
-  }
-
-  void _openHelp() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const HelpHubScreen()),
-    );
   }
 
   Widget _buildMenuDivider() {
@@ -5101,255 +5052,6 @@ const Map<String, String> _docTitles = {
   'inspection': 'Vehicle inspection',
 };
 
-class DocumentsScreen extends StatefulWidget {
-  const DocumentsScreen({super.key, required this.token});
-
-  final String token;
-
-  @override
-  State<DocumentsScreen> createState() => _DocumentsScreenState();
-}
-
-class _DocumentsScreenState extends State<DocumentsScreen> {
-  bool _loading = true;
-  List<Map<String, dynamic>> _documents = const [];
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_load());
-  }
-
-  Future<void> _load() async {
-    try {
-      final response = await http.get(
-        Uri.parse('$apiBaseUrl/driver/documents'),
-        headers: {'Authorization': 'Bearer ${widget.token}'},
-      ).timeout(apiRequestTimeout);
-
-      if (!mounted) return;
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        setState(() {
-          _documents = (data['documents'] as List)
-              .map((e) => (e as Map).cast<String, dynamic>())
-              .toList();
-        });
-      }
-    } catch (_) {
-      // leave empty; user can retry by reopening
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  ({Color color, String label}) _statusStyle(String status) {
-    switch (status) {
-      case 'verified':
-        return (color: const Color(0xFF16A34A), label: 'VERIFIED');
-      case 'pending':
-        return (color: const Color(0xFFF59E0B), label: 'PENDING');
-      case 'expired':
-        return (color: const Color(0xFFDC2626), label: 'EXPIRED');
-      default:
-        return (color: const Color(0xFF94A3B8), label: 'MISSING');
-    }
-  }
-
-  Future<void> _updateDocument(Map<String, dynamic> doc) async {
-    final docType = doc['docType'] as String;
-    final numberController =
-        TextEditingController(text: doc['docNumber'] as String? ?? '');
-    final expiryController = TextEditingController(
-      text: (doc['expiryDate'] as String?)?.split('T').first ?? '',
-    );
-
-    final saved = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
-      builder: (sheetContext) {
-        var busy = false;
-        return StatefulBuilder(
-          builder: (sheetContext, setSheet) {
-            Future<void> submit() async {
-              if (numberController.text.trim().isEmpty) return;
-              setSheet(() => busy = true);
-              try {
-                final response = await http.patch(
-                  Uri.parse('$apiBaseUrl/driver/documents/$docType'),
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Bearer ${widget.token}',
-                  },
-                  body: jsonEncode({
-                    'docNumber': numberController.text.trim(),
-                    'expiryDate': expiryController.text.trim().isEmpty
-                        ? null
-                        : expiryController.text.trim(),
-                  }),
-                ).timeout(apiRequestTimeout);
-                if (sheetContext.mounted && response.statusCode == 200) {
-                  Navigator.of(sheetContext).pop(true);
-                  return;
-                }
-              } catch (_) {/* fall through */}
-              if (sheetContext.mounted) setSheet(() => busy = false);
-            }
-
-            return Padding(
-              padding: EdgeInsets.fromLTRB(
-                24, 20, 24, 20 + MediaQuery.of(sheetContext).viewInsets.bottom,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    _docTitles[docType] ?? docType,
-                    style: const TextStyle(color: stanDark, fontSize: 18, fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Submitting auto-verifies in this demo.',
-                    style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: numberController,
-                    decoration: InputDecoration(
-                      labelText: 'Document number',
-                      filled: true,
-                      fillColor: stanSurface,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: expiryController,
-                    decoration: InputDecoration(
-                      labelText: 'Expiry date (YYYY-MM-DD, optional)',
-                      filled: true,
-                      fillColor: stanSurface,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: busy ? null : submit,
-                    child: Text(busy ? 'Submitting…' : 'Submit document'),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-
-    if (saved == true && mounted) {
-      setState(() => _loading = true);
-      await _load();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: stanSurface,
-      appBar: AppBar(
-        backgroundColor: stanDark,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        title: const Text('Documents', style: TextStyle(fontWeight: FontWeight.w900)),
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(20),
-              children: _documents.map(_buildDocCard).toList(),
-            ),
-    );
-  }
-
-  Widget _buildDocCard(Map<String, dynamic> doc) {
-    final status = doc['status'] as String? ?? 'missing';
-    final style = _statusStyle(status);
-    final number = doc['docNumber'] as String?;
-    final expiry = (doc['expiryDate'] as String?)?.split('T').first;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  _docTitles[doc['docType']] ?? doc['docType'] as String,
-                  style: const TextStyle(color: stanDark, fontSize: 15, fontWeight: FontWeight.w900),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: style.color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  style.label,
-                  style: TextStyle(color: style.color, fontSize: 10.5, fontWeight: FontWeight.w900, letterSpacing: 0.4),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            number == null ? 'Not on file' : 'No. $number',
-            style: const TextStyle(color: Color(0xFF475569), fontSize: 13, fontWeight: FontWeight.w600),
-          ),
-          if (expiry != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text(
-                'Expires $expiry',
-                style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12.5),
-              ),
-            ),
-          const SizedBox(height: 12),
-          OutlinedButton(
-            onPressed: () => unawaited(_updateDocument(doc)),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: stanDark,
-              side: const BorderSide(color: Color(0xFFCBD5E1)),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            child: Text(
-              status == 'missing' ? 'Upload' : 'Update',
-              style: const TextStyle(fontWeight: FontWeight.w800),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 // ===========================================================================
 // Vehicle
@@ -5540,136 +5242,3 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   }
 }
 
-// ===========================================================================
-// Help hub
-// ===========================================================================
-
-class HelpHubScreen extends StatefulWidget {
-  const HelpHubScreen({super.key});
-
-  @override
-  State<HelpHubScreen> createState() => _HelpHubScreenState();
-}
-
-class _HelpHubScreenState extends State<HelpHubScreen> {
-  static const List<({String q, String a})> _faqs = [
-    (
-      q: 'How do I get paid?',
-      a: 'Completed deliveries credit your Stan wallet (fare minus the Stan service fee, plus tips). Cash out to M-Pesa any time from Earnings & Wallet. Payments are demo-only in this build.',
-    ),
-    (
-      q: 'How do I collect payment from a customer?',
-      a: 'When completing a delivery, choose Cash or M-Pesa. M-Pesa sends an STK push to the customer to approve on their phone (simulated in this demo).',
-    ),
-    (
-      q: 'What is the handover PIN?',
-      a: 'A 4-digit code the customer gives you at drop-off to confirm the right person received the parcel. Enter it to complete the delivery.',
-    ),
-    (
-      q: 'How do I update my documents?',
-      a: 'Open Profile → Documents and submit your licence, NTSA clearance, PSV badge, insurance, and inspection details.',
-    ),
-    (
-      q: 'My GPS / location is not updating',
-      a: 'Make sure location services are on and Stan has location permission. Open a shipment to start live tracking.',
-    ),
-    (
-      q: 'How does the SOS button work?',
-      a: 'SOS alerts Stan dispatch with your live location and opens a call to emergency services (999 / 112). Use it only in a real emergency.',
-    ),
-    (
-      q: 'A customer left an item / lost property',
-      a: 'Contact Stan dispatch through this Help hub with the tracking number so the team can coordinate return.',
-    ),
-  ];
-
-  String _query = '';
-
-  @override
-  Widget build(BuildContext context) {
-    final query = _query.trim().toLowerCase();
-    final results = query.isEmpty
-        ? _faqs
-        : _faqs
-            .where((f) => f.q.toLowerCase().contains(query) || f.a.toLowerCase().contains(query))
-            .toList();
-
-    return Scaffold(
-      backgroundColor: stanSurface,
-      appBar: AppBar(
-        backgroundColor: stanDark,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        title: const Text('Help hub', style: TextStyle(fontWeight: FontWeight.w900)),
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: TextField(
-              onChanged: (value) => setState(() => _query = value),
-              decoration: InputDecoration(
-                hintText: 'Search help (fares, PIN, GPS, documents…)',
-                prefixIcon: const Icon(Icons.search),
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                ),
-              ),
-            ),
-          ),
-          Expanded(
-            child: results.isEmpty
-                ? const Center(
-                    child: Text('No results. Try different words.',
-                        style: TextStyle(color: Color(0xFF64748B))),
-                  )
-                : ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    children: results
-                        .map((f) => Container(
-                              margin: const EdgeInsets.only(bottom: 10),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(color: const Color(0xFFE2E8F0)),
-                              ),
-                              child: ExpansionTile(
-                                shape: const Border(),
-                                title: Text(
-                                  f.q,
-                                  style: const TextStyle(
-                                    color: stanDark,
-                                    fontSize: 14.5,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                                children: [
-                                  Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: Text(
-                                      f.a,
-                                      style: const TextStyle(
-                                        color: Color(0xFF475569),
-                                        height: 1.5,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ))
-                        .toList(),
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-}
