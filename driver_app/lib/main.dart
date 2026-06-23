@@ -278,7 +278,7 @@ class _LoginScreenState extends State<LoginScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Backend address Stan connects to. Use your PC\'s Wi-Fi IP, e.g. '
+              'Backend address the app connects to. Use your PC\'s Wi-Fi IP, e.g. '
               'http://192.168.0.100:5000',
               style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
             ),
@@ -2368,7 +2368,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             child: Text(
               activeDeliveries.isEmpty
                   ? 'Enter Tracking Number'
-                  : 'STAN-${activeDeliveries.first['id'].toString().padLeft(5, '0')}',
+                  : 'TRK-${activeDeliveries.first['id'].toString().padLeft(5, '0')}',
               style: TextStyle(
                 color: activeDeliveries.isEmpty ? const Color(0xFF9AA6AD) : stanDark,
                 fontSize: 13,
@@ -2460,7 +2460,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   String _trackingCode(int deliveryId) {
-    return 'STAN-${deliveryId.toString().padLeft(5, '0')}';
+    return 'TRK-${deliveryId.toString().padLeft(5, '0')}';
   }
 
   Widget _buildInProgressCarousel(List<Map<String, dynamic>> activeDeliveries) {
@@ -2774,7 +2774,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
     return _buildTabPage(
       title: 'Shipments',
-      subtitle: 'Manage active and completed Stan packages.',
+      subtitle: 'Manage your active and completed deliveries.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -3091,7 +3091,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
-                      '$tier · Stan Pro',
+                      '$tier · Pro',
                       style: const TextStyle(
                         color: stanDark,
                         fontSize: 12,
@@ -3173,7 +3173,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'STAN PRO',
+                  'PRO',
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.65),
                     fontSize: 11,
@@ -5107,7 +5107,7 @@ class _WalletScreenState extends State<WalletScreen> {
           ),
           const Divider(height: 18),
           _miniRow('Gross', formatKsh(gross)),
-          _miniRow('Stan fee', '-${formatKsh(fee)}'),
+          _miniRow('Service fee', '-${formatKsh(fee)}'),
           _miniRow('Tips', formatKsh(tips)),
         ],
       ),
@@ -5283,7 +5283,7 @@ class VehicleScreen extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           const Text(
-            'Vehicle assignment is managed by Stan dispatch. Contact the office to '
+            'Vehicle assignment is managed by dispatch. Contact the office to '
             'change or add a vehicle.',
             style: TextStyle(color: Color(0xFF64748B), height: 1.5),
           ),

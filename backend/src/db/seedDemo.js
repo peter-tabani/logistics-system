@@ -278,7 +278,7 @@ async function seedDemo() {
       UPDATE driver_profiles
          SET status = 'online',
              rating = 4.90,
-             bio = 'Reliable Nairobi rider. 3 years moving parcels across the city with Stan.'
+             bio = 'Reliable Nairobi rider. 3 years moving parcels across the city.'
        WHERE id = $1
     `,
     [driverId]
@@ -304,7 +304,7 @@ async function seedDemo() {
   const conversations = [
     {
       party: "dispatch",
-      title: "Stan Dispatch",
+      title: "Dispatch",
       messages: [
         { sender: "dispatch", body: "Morning! New parcel for Westgate Pharmacy, drop-off in Westlands.", minsAgo: 90, read: true },
         { sender: "dispatch", body: "Customer asked for a call on arrival. Thanks!", minsAgo: 42, read: false },
@@ -321,7 +321,7 @@ async function seedDemo() {
       party: "support",
       title: "Customer Support",
       messages: [
-        { sender: "support", body: "Welcome to Stan support. How can we help today?", minsAgo: 1440, read: true },
+        { sender: "support", body: "Welcome to Support. How can we help today?", minsAgo: 1440, read: true },
       ],
     },
   ];

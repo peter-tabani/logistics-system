@@ -114,7 +114,7 @@ function autoReply(party, title) {
     case "dispatch":
       return "Thanks, noted. Dispatch is on it — we'll update you shortly.";
     case "support":
-      return "Thanks for reaching out. A Stan support agent will follow up here.";
+      return "Thanks for reaching out. A support agent will follow up here.";
     case "customer":
       return `This is ${title}. Got it, thank you — see you soon!`;
     default:
