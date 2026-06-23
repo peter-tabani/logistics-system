@@ -97,9 +97,45 @@ Phase 6 — demo content:
 Owner action items (real-phone URL, keystore, hosting, screenshots):
 `docs/NEEDS_FROM_OWNER.md`
 
+## Driver features (Uber-style) — Done
+
+- Wallet & Earnings, payment collection (Cash + M-Pesa STK) and cash-out —
+  all DEMO/MOCK (see CLAUDE.md), proof-of-delivery PIN, profile suite
+  (rating/tier/bio, documents, vehicle, account), WhatsApp-style Messages inbox.
+- "Stan" stripped from labels (tracking code is `TRK-`, tiers are `Pro`, etc.);
+  kept only as the app name on splash/login.
+
+## Liquid-glass visual pass — Done (performance-first)
+
+A reusable glass design system (`GlassPanel`, `GlassSheen`, `glassEnabled()`):
+- **Real frosted blur** (`BackdropFilter`) only where the background is static:
+  the **login card** floats as frosted glass over the navy backdrop.
+- **Floating nav island**: the bottom navigation is a rounded floating island
+  (refracting edge + sheen + soft shadow). Built as a **solid premium surface,
+  not live blur**, because it sits over scrolling lists on every tab — the exact
+  place live blur risks jank/ANR. (Adapts the spec's "floating tab bar".)
+- **Light-refracting edges + sheen** on the navy gradient cards (wallet balance,
+  Pro card, promo) — the glass "light-catching" look without blur cost.
+- **Performance-adaptive fallback**: `glassEnabled()` returns false under
+  "remove animations" (reduce-motion), so panels render as solid premium
+  surfaces; a `_forceSolidSurfaces` kill-switch is available.
+- **iOS-only ideas adapted**: lock-screen/MagSafe/album-art etc. have no app
+  equivalent and were not copied; the underlying "frosted, layered, light-
+  catching" language was applied to our panels/nav/cards instead.
+
+Deliberately conservative (solid, no live blur) for performance / stability:
+- The **map workflow sheet and map chrome** — large/continuously-moving map
+  underneath is the worst case for `BackdropFilter`; kept as premium solid
+  surfaces.
+- Light list screens (Shipments, Documents, Messages, Profile body) keep clean
+  bordered cards (frosting over a light background adds little and costs frames).
+
+Screen to watch on a real phone: the **map/tracking screen** (live map + Google
+Maps SDK is the heaviest); glass there is intentionally solid to stay smooth.
+
 ## Next Recommended Step
 
 - Get the real-phone API URL from the owner and rebuild the APK for the demo
   (see `docs/NEEDS_FROM_OWNER.md`).
-- Optionally host the download page publicly.
+- Optionally carry the navy + glass styling into the web dashboard for parity.
 
