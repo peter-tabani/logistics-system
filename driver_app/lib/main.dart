@@ -37,6 +37,138 @@ const String pendingTrackingEventsKey = 'pendingTrackingEvents';
 const double pickupArrivalRadiusMeters = 120;
 const double dropoffArrivalRadiusMeters = 150;
 
+// ── Liquid-glass design system ──────────────────────────────────────────────
+// Performance-first glassmorphism. Real BackdropFilter blur is used only where
+// it stays smooth (static backgrounds, small chrome). When the OS requests
+// reduced motion — or blur is disallowed over moving content like the live map —
+// panels render as near-solid premium surfaces instead. A light-refracting edge
+// border plus an ambient top sheen give the "glass pane catching light" look
+// even without blur.
+
+bool _forceSolidSurfaces = false; // global kill-switch for the blur path.
+
+bool glassEnabled(BuildContext context) {
+  if (_forceSolidSurfaces) return false;
+  final mq = MediaQuery.maybeOf(context);
+  if (mq == null) return true;
+  if (mq.disableAnimations) return false; // respect "remove animations"
+  return true;
+}
+
+/// Soft shadow for floating "island" glass elements.
+const List<BoxShadow> glassShadow = [
+  BoxShadow(color: Color(0x33000000), blurRadius: 28, offset: Offset(0, 12)),
+];
+
+/// A frosted-glass panel. [allowBlur] should be false over continuously moving
+/// content (e.g. a live map) to protect frame rate — it then renders as a
+/// near-solid premium surface with the same glass styling.
+class GlassPanel extends StatelessWidget {
+  const GlassPanel({
+    super.key,
+    required this.child,
+    this.radius = 20,
+    this.blurSigma = 16,
+    this.padding,
+    this.dark = false,
+    this.baseColor,
+    this.allowBlur = true,
+    this.shadow = false,
+  });
+
+  final Widget child;
+  final double radius;
+  final double blurSigma;
+  final EdgeInsetsGeometry? padding;
+  final bool dark;
+  final Color? baseColor;
+  final bool allowBlur;
+  final bool shadow;
+
+  @override
+  Widget build(BuildContext context) {
+    final useBlur = allowBlur && glassEnabled(context);
+    final base = baseColor ?? (dark ? stanDark : Colors.white);
+    // Translucent when blurring so the background shows through; near-solid
+    // (premium fallback) when not.
+    final fill = useBlur
+        ? base.withValues(alpha: dark ? 0.58 : 0.62)
+        : base.withValues(alpha: dark ? 1.0 : 1.0);
+    final borderRadius = BorderRadius.circular(radius);
+
+    Widget content = DecoratedBox(
+      decoration: BoxDecoration(color: fill, borderRadius: borderRadius),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: borderRadius,
+          // Ambient top sheen — light catching the top of the glass.
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.white.withValues(alpha: dark ? 0.10 : 0.30),
+              Colors.white.withValues(alpha: 0.0),
+            ],
+            stops: const [0.0, 0.5],
+          ),
+          // Light-refracting edge border.
+          border: Border.all(
+            color: Colors.white.withValues(alpha: dark ? 0.18 : 0.7),
+            width: 1,
+          ),
+        ),
+        child: padding == null ? child : Padding(padding: padding!, child: child),
+      ),
+    );
+
+    if (useBlur) {
+      content = BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+        child: content,
+      );
+    }
+
+    content = ClipRRect(borderRadius: borderRadius, child: content);
+
+    if (shadow) {
+      content = DecoratedBox(
+        decoration: BoxDecoration(borderRadius: borderRadius, boxShadow: glassShadow),
+        child: content,
+      );
+    }
+
+    return content;
+  }
+}
+
+/// Refracting edge + faint top sheen overlaid on an existing (e.g. gradient)
+/// surface — used to glassify the navy cards without losing their gradient.
+class GlassSheen extends StatelessWidget {
+  const GlassSheen({super.key, this.radius = 18});
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(radius),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.16), width: 1),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Colors.white.withValues(alpha: 0.12),
+              Colors.white.withValues(alpha: 0.0),
+            ],
+            stops: const [0.0, 0.55],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 enum DriverWorkflowStep { assignments, routePreview, liveTracking, completed }
 
 String formatDeliveryStatus(String status) {
@@ -453,19 +585,11 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       const SizedBox(height: 34),
-                      Container(
+                      GlassPanel(
+                        radius: 28,
+                        blurSigma: 18,
+                        shadow: true,
                         padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(28),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.24),
-                              blurRadius: 34,
-                              offset: const Offset(0, 18),
-                            ),
-                          ],
-                        ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
