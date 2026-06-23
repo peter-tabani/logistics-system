@@ -2747,6 +2747,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             colors: [stanDark, stanPanel],
           ),
           borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.14), width: 1),
         ),
         child: Row(
           children: [
@@ -2814,32 +2815,32 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       (Icons.person_outline_rounded, 'Profile'),
     ];
 
+    // Floating "island" nav. Deliberately a solid premium surface (no live
+    // BackdropFilter): this bar sits over scrolling lists on every tab, the
+    // exact place live blur risks jank/ANR. The glass identity comes from the
+    // rounded island, refracting edge, top sheen and floating shadow.
     return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 24,
-            offset: const Offset(0, -8),
-          ),
-        ],
-      ),
-      // Keep the bar clear of the system gesture / navigation buttons.
+      color: stanSurface,
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 10, 24, 10),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              for (var index = 0; index < items.length; index++)
-                _buildBottomNavigationItem(
-                  icon: items[index].$1,
-                  label: items[index].$2,
-                  index: index,
-                ),
-            ],
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+          child: GlassPanel(
+            radius: 26,
+            allowBlur: false,
+            shadow: true,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                for (var index = 0; index < items.length; index++)
+                  _buildBottomNavigationItem(
+                    icon: items[index].$1,
+                    label: items[index].$2,
+                    index: index,
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -3289,6 +3290,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       decoration: BoxDecoration(
         gradient: const LinearGradient(colors: [stanDark, stanPanel]),
         borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.14), width: 1),
       ),
       child: Row(
         children: [
@@ -5141,7 +5143,9 @@ class _WalletScreenState extends State<WalletScreen> {
       decoration: BoxDecoration(
         gradient: const LinearGradient(colors: [stanDark, stanPanel]),
         borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.16), width: 1),
       ),
+
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
