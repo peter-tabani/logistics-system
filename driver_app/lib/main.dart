@@ -15,9 +15,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 const String configuredApiBaseUrl = String.fromEnvironment('API_BASE_URL');
-const String apiBaseUrl = configuredApiBaseUrl == ''
+const String defaultApiBaseUrl = configuredApiBaseUrl == ''
     ? (kIsWeb ? 'http://localhost:5000' : 'http://10.0.2.2:5000')
     : configuredApiBaseUrl;
+const String apiBaseUrlPrefKey = 'apiBaseUrl';
+// Overridable at runtime via the login screen's "Server settings" so a changed
+// PC Wi-Fi IP doesn't require a rebuild.
+String apiBaseUrl = defaultApiBaseUrl;
 const Duration apiRequestTimeout = Duration(seconds: 12);
 // Google Maps key passed at build time via --dart-define=GOOGLE_MAPS_API_KEY=...
 // When empty, the app renders the free OpenStreetMap (flutter_map) layer.
@@ -58,11 +62,23 @@ double calculateDistanceMeters(LatLng firstPoint, LatLng secondPoint) {
   return earthRadiusMeters * c;
 }
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Draw behind the status bar and navigation bar (edge-to-edge), like modern
   // apps. Screens then use SafeArea / insets to position content correctly.
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+
+  // Apply a saved backend-URL override (set on the login screen) if present.
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(apiBaseUrlPrefKey);
+    if (saved != null && saved.trim().isNotEmpty) {
+      apiBaseUrl = saved.trim();
+    }
+  } catch (_) {
+    // Fall back to the compiled default.
+  }
+
   runApp(const MyApp());
 }
 
@@ -246,6 +262,67 @@ class _LoginScreenState extends State<LoginScreen> {
     _phoneController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  // Lets the driver point the app at the backend without a rebuild — useful
+  // when the PC's Wi-Fi IP changes.
+  Future<void> _editServerUrl() async {
+    final controller = TextEditingController(text: apiBaseUrl);
+
+    final saved = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Server settings'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Backend address Stan connects to. Use your PC\'s Wi-Fi IP, e.g. '
+              'http://192.168.0.100:5000',
+              style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.url,
+              autocorrect: false,
+              decoration: const InputDecoration(
+                labelText: 'Server URL',
+                hintText: 'http://192.168.0.100:5000',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(defaultApiBaseUrl),
+            child: const Text('Reset'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (saved == null) return;
+
+    final url = saved.trim();
+    final prefs = await SharedPreferences.getInstance();
+    if (url.isEmpty || url == defaultApiBaseUrl) {
+      await prefs.remove(apiBaseUrlPrefKey);
+    } else {
+      await prefs.setString(apiBaseUrlPrefKey, url);
+    }
+
+    if (!mounted) return;
+    setState(() => apiBaseUrl = url.isEmpty ? defaultApiBaseUrl : url);
   }
 
   Future<void> _login() async {
@@ -468,12 +545,24 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 18),
                       Text(
-                        'Test account: 0711111111 / driver123\nAPI: $apiBaseUrl',
+                        'Test account: 0711111111 / driver123\nServer: $apiBaseUrl',
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           color: stanMuted,
                           fontSize: 12,
                           height: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Center(
+                        child: TextButton.icon(
+                          onPressed: _editServerUrl,
+                          style: TextButton.styleFrom(foregroundColor: stanMuted),
+                          icon: const Icon(Icons.settings_outlined, size: 15),
+                          label: const Text(
+                            'Server settings',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                          ),
                         ),
                       ),
                     ],
