@@ -613,6 +613,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   Map<String, dynamic>? _profile;
   List<Map<String, dynamic>> _documents = const [];
+  List<Map<String, dynamic>> _conversations = const [];
 
   bool _isSendingLocation = false;
   bool _isLoadingDeliveries = false;
@@ -659,6 +660,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
     await _loadDeliveries();
     unawaited(_loadProfile());
+    unawaited(_loadConversations());
 
     if (!mounted) return;
 
@@ -2732,6 +2734,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         setState(() {
           _selectedNavIndex = index;
         });
+        if (index == 2) unawaited(_loadConversations());
+        if (index == 3) unawaited(_loadProfile());
       },
       borderRadius: BorderRadius.circular(999),
       child: SizedBox(
@@ -2802,149 +2806,199 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   Widget _buildMessagesPage(BuildContext context) {
-    final activeDeliveries = _activeDeliveries;
-    final hasActive = activeDeliveries.isNotEmpty;
-    final activeCustomer = hasActive
-        ? activeDeliveries.first['customerName'] as String
-        : 'your next pickup';
-
-    return _buildTabPage(
-      title: 'Messages',
-      subtitle: 'Dispatcher updates and customer notes.',
+    return SafeArea(
+      bottom: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _buildMessageItem(
-            initials: 'OP',
-            color: const Color(0xFF2563EB),
-            name: 'Stan Dispatch',
-            preview: hasActive
-                ? 'You\'re assigned to $activeCustomer. Drive safe!'
-                : 'No active job right now — stay online for the next one.',
-            time: 'now',
-            unread: hasActive,
+          const Padding(
+            padding: EdgeInsets.fromLTRB(24, 22, 24, 14),
+            child: Text(
+              'Messages',
+              style: TextStyle(
+                color: stanDark,
+                fontSize: 28,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.8,
+              ),
+            ),
           ),
-          _buildMessageItem(
-            initials: 'RT',
-            color: const Color(0xFF16A34A),
-            name: 'Route Assistant',
-            preview: 'Live GPS is shared with the owner while a delivery is active.',
-            time: '2m',
-            unread: false,
-          ),
-          _buildMessageItem(
-            initials: 'CS',
-            color: const Color(0xFFF59E0B),
-            name: 'Customer Support',
-            preview: 'Tap here if a customer is unreachable at the dropoff.',
-            time: '1h',
-            unread: false,
-          ),
-          const SizedBox(height: 8),
-          _buildInfoPanel(
-            Icons.lock_outline_rounded,
-            'Two-way chat coming soon',
-            'This demo shows where dispatcher, route, and customer messages live. Real-time chat connects in a later phase.',
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _loadConversations,
+              child: _conversations.isEmpty
+                  ? ListView(
+                      children: const [
+                        SizedBox(height: 120),
+                        Icon(Icons.forum_outlined, size: 44, color: Color(0xFFB4BDC3)),
+                        SizedBox(height: 12),
+                        Center(
+                          child: Text(
+                            'No conversations yet',
+                            style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ],
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: _conversations.length,
+                      separatorBuilder: (_, _) =>
+                          const Divider(height: 1, thickness: 1, color: Color(0xFFEEF2F8)),
+                      itemBuilder: (context, index) =>
+                          _buildConversationRow(_conversations[index]),
+                    ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildMessageItem({
-    required String initials,
-    required Color color,
-    required String name,
-    required String preview,
-    required String time,
-    required bool unread,
-  }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Center(
-              child: Text(
-                initials,
-                style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 14,
-                ),
+  ({Color color, IconData icon}) _partyStyle(String party) {
+    switch (party) {
+      case 'dispatch':
+        return (color: const Color(0xFF2563EB), icon: Icons.headset_mic_outlined);
+      case 'customer':
+        return (color: const Color(0xFF16A34A), icon: Icons.person_outline_rounded);
+      case 'support':
+        return (color: const Color(0xFFF59E0B), icon: Icons.support_agent_outlined);
+      default:
+        return (color: stanMuted, icon: Icons.chat_bubble_outline_rounded);
+    }
+  }
+
+  Widget _buildConversationRow(Map<String, dynamic> convo) {
+    final party = convo['party'] as String? ?? 'dispatch';
+    final style = _partyStyle(party);
+    final unread = (convo['unread'] as num?)?.toInt() ?? 0;
+    final lastSender = convo['lastSender'] as String?;
+    final lastMessage = convo['lastMessage'] as String?;
+    final preview = lastMessage == null
+        ? 'Start the conversation'
+        : '${lastSender == 'driver' ? 'You: ' : ''}$lastMessage';
+
+    return InkWell(
+      onTap: () => _openChat(convo),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: style.color.withValues(alpha: 0.14),
+                shape: BoxShape.circle,
               ),
+              child: Icon(style.icon, color: style.color, size: 24),
             ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        name,
-                        style: const TextStyle(
-                          color: stanDark,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w900,
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          convo['title'] as String? ?? '',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: stanDark,
+                            fontSize: 15.5,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
-                    ),
-                    Text(
-                      time,
-                      style: const TextStyle(
-                        color: stanMuted,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
+                      Text(
+                        shortTime(convo['lastAt'] as String?),
+                        style: TextStyle(
+                          color: unread > 0 ? const Color(0xFF16A34A) : stanMuted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  preview,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF60727A),
-                    fontSize: 13,
-                    height: 1.35,
-                    fontWeight: FontWeight.w600,
+                    ],
                   ),
-                ),
-              ],
-            ),
-          ),
-          if (unread) ...[
-            const SizedBox(width: 10),
-            Container(
-              width: 9,
-              height: 9,
-              margin: const EdgeInsets.only(top: 6),
-              decoration: const BoxDecoration(
-                color: Color(0xFF2563EB),
-                shape: BoxShape.circle,
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          preview,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: unread > 0 ? stanDark : const Color(0xFF64748B),
+                            fontSize: 13.5,
+                            fontWeight: unread > 0 ? FontWeight.w700 : FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      if (unread > 0) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          constraints: const BoxConstraints(minWidth: 22),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF16A34A),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Text(
+                            '$unread',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
               ),
             ),
           ],
-        ],
+        ),
       ),
     );
+  }
+
+  Future<void> _loadConversations() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$apiBaseUrl/driver/conversations'),
+        headers: {'Authorization': 'Bearer ${widget.token}'},
+      ).timeout(apiRequestTimeout);
+
+      if (!mounted || response.statusCode != 200) return;
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      setState(() {
+        _conversations = (data['conversations'] as List)
+            .map((e) => (e as Map).cast<String, dynamic>())
+            .toList();
+      });
+    } catch (_) {
+      // Non-fatal.
+    }
+  }
+
+  Future<void> _openChat(Map<String, dynamic> convo) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          token: widget.token,
+          conversationId: convo['id'] as int,
+          title: convo['title'] as String? ?? 'Chat',
+          party: convo['party'] as String? ?? 'dispatch',
+        ),
+      ),
+    );
+    unawaited(_loadConversations());
   }
 
   Widget _buildProfilePage(BuildContext context) {
@@ -4469,6 +4523,28 @@ String shortDate(String? iso) {
   return '${months[date.month - 1]} ${date.day}, $hour:$minute $period';
 }
 
+// Relative time for chat lists / bubbles: now, 5m, h:mm AM, or MMM d.
+String shortTime(String? iso) {
+  final date = iso == null ? null : DateTime.tryParse(iso)?.toLocal();
+  if (date == null) return '';
+  final now = DateTime.now();
+  final diff = now.difference(date);
+  if (diff.inMinutes < 1) return 'now';
+  if (diff.inMinutes < 60) return '${diff.inMinutes}m';
+
+  final sameDay = now.year == date.year && now.month == date.month && now.day == date.day;
+  if (sameDay) {
+    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
+    final minute = date.minute.toString().padLeft(2, '0');
+    return '$hour:$minute ${date.hour < 12 ? 'AM' : 'PM'}';
+  }
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  return '${months[date.month - 1]} ${date.day}';
+}
+
 class StkResult {
   const StkResult({required this.success, this.reference, required this.message});
 
@@ -5327,6 +5403,279 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ===========================================================================
+// Chat thread (WhatsApp-style)
+// ===========================================================================
+
+class ChatScreen extends StatefulWidget {
+  const ChatScreen({
+    super.key,
+    required this.token,
+    required this.conversationId,
+    required this.title,
+    required this.party,
+  });
+
+  final String token;
+  final int conversationId;
+  final String title;
+  final String party;
+
+  @override
+  State<ChatScreen> createState() => _ChatScreenState();
+}
+
+class _ChatScreenState extends State<ChatScreen> {
+  final TextEditingController _input = TextEditingController();
+  final ScrollController _scroll = ScrollController();
+  List<Map<String, dynamic>> _messages = const [];
+  bool _loading = true;
+  bool _sending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  @override
+  void dispose() {
+    _input.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$apiBaseUrl/driver/conversations/${widget.conversationId}/messages'),
+        headers: {'Authorization': 'Bearer ${widget.token}'},
+      ).timeout(apiRequestTimeout);
+
+      if (!mounted || response.statusCode != 200) return;
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      setState(() {
+        _messages = (data['messages'] as List)
+            .map((e) => (e as Map).cast<String, dynamic>())
+            .toList();
+      });
+      _scrollToBottom();
+    } catch (_) {
+      // leave empty
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) {
+        _scroll.animateTo(
+          _scroll.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  Future<void> _send() async {
+    final body = _input.text.trim();
+    if (body.isEmpty || _sending) return;
+
+    setState(() => _sending = true);
+    _input.clear();
+
+    try {
+      final response = await http.post(
+        Uri.parse('$apiBaseUrl/driver/conversations/${widget.conversationId}/messages'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${widget.token}',
+        },
+        body: jsonEncode({'body': body}),
+      ).timeout(apiRequestTimeout);
+
+      if (!mounted) return;
+      if (response.statusCode == 201) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final newMessages = (data['messages'] as List)
+            .map((e) => (e as Map).cast<String, dynamic>())
+            .toList();
+        setState(() => _messages = [..._messages, ...newMessages]);
+        _scrollToBottom();
+      } else {
+        _input.text = body;
+      }
+    } catch (_) {
+      _input.text = body;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not send. Check your connection.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFEDF1F7),
+      appBar: AppBar(
+        backgroundColor: stanDark,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        titleSpacing: 0,
+        title: Row(
+          children: [
+            CircleAvatar(
+              radius: 16,
+              backgroundColor: Colors.white.withValues(alpha: 0.16),
+              child: Text(
+                widget.title.isNotEmpty ? widget.title[0].toUpperCase() : '?',
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                widget.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _messages.isEmpty
+                    ? const Center(
+                        child: Text(
+                          'No messages yet. Say hello 👋',
+                          style: TextStyle(color: Color(0xFF64748B)),
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: _scroll,
+                        padding: const EdgeInsets.fromLTRB(14, 16, 14, 16),
+                        itemCount: _messages.length,
+                        itemBuilder: (context, index) => _buildBubble(_messages[index]),
+                      ),
+          ),
+          _buildComposer(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBubble(Map<String, dynamic> msg) {
+    final isDriver = msg['sender'] == 'driver';
+    return Align(
+      alignment: isDriver ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
+        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.76),
+        decoration: BoxDecoration(
+          color: isDriver ? stanDark : Colors.white,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(16),
+            topRight: const Radius.circular(16),
+            bottomLeft: Radius.circular(isDriver ? 16 : 4),
+            bottomRight: Radius.circular(isDriver ? 4 : 16),
+          ),
+          border: isDriver ? null : Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              msg['body'] as String? ?? '',
+              style: TextStyle(
+                color: isDriver ? Colors.white : stanDark,
+                fontSize: 14.5,
+                height: 1.3,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              shortTime(msg['createdAt'] as String?),
+              style: TextStyle(
+                color: isDriver ? Colors.white.withValues(alpha: 0.6) : const Color(0xFF94A3B8),
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildComposer() {
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _input,
+                minLines: 1,
+                maxLines: 4,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: InputDecoration(
+                  hintText: 'Message',
+                  filled: true,
+                  fillColor: const Color(0xFFF1F5F9),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(24),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+                onSubmitted: (_) => unawaited(_send()),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Material(
+              color: stanDark,
+              shape: const CircleBorder(),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: _sending ? null : () => unawaited(_send()),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: _sending
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
