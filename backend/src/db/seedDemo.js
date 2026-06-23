@@ -208,6 +208,7 @@ async function seedDemo() {
   );
   await pool.query(`DELETE FROM wallet_transactions WHERE driver_id = $1`, [driverId]);
   await pool.query(`DELETE FROM driver_documents WHERE driver_id = $1`, [driverId]);
+  await pool.query(`DELETE FROM conversations WHERE driver_id = $1`, [driverId]);
   await pool.query(
     `DELETE FROM driver_tracking_events WHERE driver_id = $1 AND metadata ->> 'source' = $2`,
     [driverId, DEMO_EVENT_MARKER]
@@ -297,6 +298,54 @@ async function seedDemo() {
       `,
       [driverId, doc.type, doc.number, doc.status, doc.expiry]
     );
+  }
+
+  // 6b. Messaging inbox: conversations with seeded incoming messages.
+  const conversations = [
+    {
+      party: "dispatch",
+      title: "Stan Dispatch",
+      messages: [
+        { sender: "dispatch", body: "Morning! New parcel for Westgate Pharmacy, drop-off in Westlands.", minsAgo: 90, read: true },
+        { sender: "dispatch", body: "Customer asked for a call on arrival. Thanks!", minsAgo: 42, read: false },
+      ],
+    },
+    {
+      party: "customer",
+      title: "Westgate Pharmacy",
+      messages: [
+        { sender: "customer", body: "Hi, are you on the way with our order?", minsAgo: 15, read: false },
+      ],
+    },
+    {
+      party: "support",
+      title: "Customer Support",
+      messages: [
+        { sender: "support", body: "Welcome to Stan support. How can we help today?", minsAgo: 1440, read: true },
+      ],
+    },
+  ];
+
+  for (const convo of conversations) {
+    const convoResult = await pool.query(
+      `
+        INSERT INTO conversations (driver_id, party, title)
+        VALUES ($1, $2, $3)
+        RETURNING id
+      `,
+      [driverId, convo.party, convo.title]
+    );
+    const conversationId = convoResult.rows[0].id;
+
+    for (const msg of convo.messages) {
+      await pool.query(
+        `
+          INSERT INTO messages (conversation_id, sender, body, read_by_driver, created_at)
+          VALUES ($1, $2, $3, $4, NOW() - ($5 * INTERVAL '1 minute'))
+        `,
+        [conversationId, msg.sender, msg.body, msg.read, msg.minsAgo]
+      );
+    }
   }
 
   // 7. A tracking event on the active delivery.

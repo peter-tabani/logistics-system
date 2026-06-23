@@ -130,3 +130,31 @@ CREATE TABLE IF NOT EXISTS wallet_transactions (
 
 CREATE INDEX IF NOT EXISTS idx_wallet_transactions_driver_created
   ON wallet_transactions(driver_id, created_at DESC);
+
+-- ---------------------------------------------------------------------------
+-- Messaging (WhatsApp-style inbox): conversations + messages.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS conversations (
+  id SERIAL PRIMARY KEY,
+  driver_id INTEGER NOT NULL REFERENCES driver_profiles(id) ON DELETE CASCADE,
+  -- party: dispatch | support | customer
+  party VARCHAR(40) NOT NULL,
+  title VARCHAR(120) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (driver_id, party, title)
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+  id BIGSERIAL PRIMARY KEY,
+  conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  -- sender: driver | dispatch | support | customer
+  sender VARCHAR(20) NOT NULL,
+  body TEXT NOT NULL,
+  read_by_driver BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_messages_conversation_created
+  ON messages(conversation_id, created_at);

@@ -2,6 +2,7 @@ const express = require("express");
 
 const driverController = require("../controllers/driverController");
 const features = require("../controllers/driverFeaturesController");
+const messages = require("../controllers/messagesController");
 const { authenticate, requireRole } = require("../middleware/authMiddleware");
 
 const router = express.Router();
@@ -35,5 +36,10 @@ router.post("/deliveries/:deliveryId/mpesa-result", features.mpesaResult);
 
 // Safety
 router.post("/sos", features.triggerSos);
+
+// Messaging (WhatsApp-style inbox)
+router.get("/conversations", messages.getConversations);
+router.get("/conversations/:conversationId/messages", messages.getMessages);
+router.post("/conversations/:conversationId/messages", messages.sendMessage);
 
 module.exports = router;
