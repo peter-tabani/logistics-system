@@ -607,6 +607,18 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  String _friendlyServer(String url) {
+    try {
+      final uri = Uri.parse(url);
+      if (uri.host.contains('render.com')) return 'Cloud (Render)';
+      if (uri.host == '10.0.2.2') return 'Emulator';
+      if (uri.host == 'localhost') return 'This PC';
+      return uri.host;
+    } catch (_) {
+      return url;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -700,14 +712,34 @@ class _LoginScreenState extends State<LoginScreen> {
                             TextField(
                               controller: _phoneController,
                               keyboardType: TextInputType.phone,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: stanDark,
+                              ),
                               decoration: InputDecoration(
-                                labelText: 'Phone number',
+                                hintText: 'Phone number',
                                 prefixIcon: const Icon(Icons.phone_outlined),
                                 filled: true,
                                 fillColor: stanSurface,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 18,
+                                  vertical: 18,
+                                ),
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(18),
                                   borderSide: BorderSide.none,
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(18),
+                                  borderSide: BorderSide.none,
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(18),
+                                  borderSide: const BorderSide(
+                                    color: Color(0xFF12323A),
+                                    width: 1.5,
+                                  ),
                                 ),
                               ),
                             ),
@@ -715,14 +747,34 @@ class _LoginScreenState extends State<LoginScreen> {
                             TextField(
                               controller: _passwordController,
                               obscureText: true,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: stanDark,
+                              ),
                               decoration: InputDecoration(
-                                labelText: 'Password',
+                                hintText: 'Password',
                                 prefixIcon: const Icon(Icons.lock_outline),
                                 filled: true,
                                 fillColor: stanSurface,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 18,
+                                  vertical: 18,
+                                ),
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(18),
                                   borderSide: BorderSide.none,
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(18),
+                                  borderSide: BorderSide.none,
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(18),
+                                  borderSide: const BorderSide(
+                                    color: Color(0xFF12323A),
+                                    width: 1.5,
+                                  ),
                                 ),
                               ),
                             ),
@@ -755,7 +807,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 18),
                       Text(
-                        'Test account: 0711111111 / driver123\nServer: $apiBaseUrl',
+                        'Test account: 0711111111 / driver123\nServer: ${_friendlyServer(apiBaseUrl)}',
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           color: stanMuted,
