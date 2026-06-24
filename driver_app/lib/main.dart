@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -15,9 +14,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 const String configuredApiBaseUrl = String.fromEnvironment('API_BASE_URL');
-const String defaultApiBaseUrl = configuredApiBaseUrl == ''
-    ? (kIsWeb ? 'http://localhost:5000' : 'http://10.0.2.2:5000')
-    : configuredApiBaseUrl;
+// Default backend = the always-on Render deployment, so the app works from any
+// network out of the box. A build-time --dart-define=API_BASE_URL overrides it,
+// and the user can still change it at runtime via login → Server settings.
+const String defaultApiBaseUrl =
+    configuredApiBaseUrl == '' ? 'https://stan-backend.onrender.com' : configuredApiBaseUrl;
 const String apiBaseUrlPrefKey = 'apiBaseUrl';
 // Overridable at runtime via the login screen's "Server settings" so a changed
 // PC Wi-Fi IP doesn't require a rebuild.
