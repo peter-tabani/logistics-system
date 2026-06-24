@@ -403,44 +403,114 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final saved = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Server settings'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Backend address the app connects to. Use your PC\'s Wi-Fi IP, e.g. '
-              'http://192.168.0.100:5000',
-              style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              keyboardType: TextInputType.url,
-              autocorrect: false,
-              decoration: const InputDecoration(
-                labelText: 'Server URL',
-                hintText: 'http://192.168.0.100:5000',
+      builder: (dialogContext) {
+        String? testResult;
+        bool testOk = false;
+        bool testing = false;
+
+        return StatefulBuilder(
+          builder: (dialogContext, setDialog) {
+            Future<void> testConnection() async {
+              final url = controller.text.trim().replaceAll(RegExp(r'/+$'), '');
+              if (url.isEmpty) return;
+              setDialog(() {
+                testing = true;
+                testResult = null;
+              });
+              try {
+                final response = await http
+                    .get(Uri.parse('$url/health'))
+                    .timeout(const Duration(seconds: 6));
+                final ok = response.statusCode == 200 &&
+                    response.body.contains('"status":"ok"');
+                setDialog(() {
+                  testOk = ok;
+                  testResult = ok
+                      ? 'Connected — backend is reachable.'
+                      : 'Reached the server but got an unexpected response (${response.statusCode}).';
+                });
+              } catch (_) {
+                setDialog(() {
+                  testOk = false;
+                  testResult =
+                      'No response. Check the IP, that the phone is on the same Wi-Fi, and that the backend is running.';
+                });
+              } finally {
+                setDialog(() => testing = false);
+              }
+            }
+
+            return AlertDialog(
+              title: const Text('Server settings'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Backend address the app connects to. Use your PC\'s Wi-Fi IP, e.g. '
+                    'http://192.168.0.100:5000',
+                    style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: controller,
+                    keyboardType: TextInputType.url,
+                    autocorrect: false,
+                    decoration: const InputDecoration(
+                      labelText: 'Server URL',
+                      hintText: 'http://192.168.0.100:5000',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: testing ? null : testConnection,
+                        icon: testing
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.wifi_tethering, size: 16),
+                        label: Text(testing ? 'Testing…' : 'Test connection'),
+                      ),
+                    ],
+                  ),
+                  if (testResult != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      testResult!,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        height: 1.35,
+                        fontWeight: FontWeight.w600,
+                        color: testOk
+                            ? const Color(0xFF16A34A)
+                            : const Color(0xFFDC2626),
+                      ),
+                    ),
+                  ],
+                ],
               ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(defaultApiBaseUrl),
-            child: const Text('Reset'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(controller.text.trim()),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(defaultApiBaseUrl),
+                  child: const Text('Reset'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(controller.text.trim()),
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
 
     if (saved == null) return;
@@ -510,7 +580,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       setState(() {
         _errorMessage =
-            'Could not connect to the backend. Make sure it is running.';
+            'Could not reach the server at $apiBaseUrl.\nCheck the backend is running and update the address under Server settings.';
       });
     } finally {
       if (mounted) {

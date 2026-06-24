@@ -54,6 +54,22 @@ behalf — and keys are gitignored, never committed.
 
 ---
 
+## 0c. Always-on backend so the app works from any network  ·  recommended
+
+The backend currently runs on the PC, so the phone only connects on the **same
+Wi-Fi as the PC**. To use the app from work / school / home (or with the PC
+off), the backend must be reachable over the internet. Full steps in
+`docs/CONNECT_FROM_ANYWHERE.md`. The code is ready (`db.js` supports a cloud
+`DATABASE_URL`; a `render.yaml` blueprint is included; the app's URL is editable
+in **Server settings**, so no rebuild is needed once it's hosted).
+
+**What I need from you (pick one):**
+- *Today, temporary:* run the Cloudflare tunnel command (no signup) — Option A.
+- *Permanent:* a free **GitHub** repo + free **Render** account, then deploy the
+  blueprint — Option B. I won't create accounts or commit credentials for you.
+
+---
+
 ## 1. Real-phone API URL for the distributable APK  ·  BLOCKER for real-phone demo
 
 The driver app's backend URL is fixed **when the APK is built**. The APK I built
