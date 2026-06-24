@@ -175,6 +175,18 @@ String formatDeliveryStatus(String status) {
   return status.replaceAll('_', ' ');
 }
 
+// Wake a sleeping (free-tier) cloud backend early so the first real request
+// doesn't time out on a cold start. Fire-and-forget; failure is ignored.
+Future<void> warmUpBackend() async {
+  try {
+    await http
+        .get(Uri.parse('$apiBaseUrl/health'))
+        .timeout(const Duration(seconds: 45));
+  } catch (_) {
+    // Ignored — this is only a warm-up.
+  }
+}
+
 double calculateDistanceMeters(LatLng firstPoint, LatLng secondPoint) {
   const earthRadiusMeters = 6371000;
   final firstLatitude = firstPoint.latitude * pi / 180;
@@ -254,6 +266,8 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
+    // Start waking a sleeping cloud backend while the splash + login show.
+    unawaited(warmUpBackend());
     Timer(const Duration(milliseconds: 1400), () {
       if (!mounted) return;
 
@@ -543,7 +557,8 @@ class _LoginScreenState extends State<LoginScreen> {
               'password': _passwordController.text,
             }),
           )
-          .timeout(apiRequestTimeout);
+          // Longer than usual to tolerate a free-tier cloud cold start (~30-50s).
+          .timeout(const Duration(seconds: 45));
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
 
