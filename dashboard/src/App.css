@@ -675,6 +675,57 @@ button:disabled {
   background: #dcfce7;
 }
 
+.status-pill.at_collection_point {
+  color: #6d28d9;
+  background: #ede9fe;
+}
+
+.leg2-dispatch {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.leg2-dispatch select {
+  flex: 1;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.leg2-dispatch button {
+  border: 0;
+  border-radius: 9px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 900;
+  color: #fff;
+  background: var(--stan-dark);
+  cursor: pointer;
+}
+
+.toggle-pill {
+  justify-self: end;
+  border: 0;
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.toggle-pill.on {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.toggle-pill.off {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
 .toast-message,
 .message {
   position: fixed;

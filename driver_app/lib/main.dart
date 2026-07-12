@@ -1108,6 +1108,26 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     return _deliveryPoint(delivery, 'dropoffLatitude', 'dropoffLongitude');
   }
 
+  // Two-leg routing via a collection point. The backend already presents the
+  // leg-effective pickup/dropoff route; these helpers read the leg context.
+  bool _viaCollectionPoint(Map<String, dynamic> delivery) =>
+      delivery['viaCollectionPoint'] == true;
+
+  int _deliveryLeg(Map<String, dynamic> delivery) =>
+      (delivery['currentLeg'] as num?)?.toInt() ?? 1;
+
+  bool _isLeg1CollectionDrop(Map<String, dynamic> delivery) =>
+      _viaCollectionPoint(delivery) && _deliveryLeg(delivery) == 1;
+
+  String _collectionPointName(Map<String, dynamic> delivery) {
+    final point = delivery['collectionPoint'];
+    if (point is Map<String, dynamic>) {
+      final name = point['name'] as String?;
+      if (name != null && name.isNotEmpty) return name;
+    }
+    return 'the collection point';
+  }
+
   DriverWorkflowStep get _workflowStep {
     final delivery = _selectedDelivery;
 
@@ -1619,8 +1639,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         await _reportTrackingEvent(
           eventType: 'arrived_dropoff',
           severity: 'info',
-          message:
-              'Driver arrived near the destination. Collect payment and the handover PIN to complete.',
+          message: _isLeg1CollectionDrop(delivery)
+              ? 'Driver arrived near the collection point. Log the drop to finish leg 1.'
+              : 'Driver arrived near the destination. Collect payment and the handover PIN to complete.',
           deliveryId: deliveryId,
           metadata: {
             'distanceMeters': distanceMeters.round(),
@@ -4070,9 +4091,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
         ),
         const SizedBox(height: 8),
-        const Text(
-          'Use the map to get to the pickup point. Transit does not start until you collect the package.',
-          style: TextStyle(color: Color(0xFF6B7280), height: 1.4),
+        Text(
+          _viaCollectionPoint(delivery)
+              ? (_deliveryLeg(delivery) == 1
+                    ? 'Leg 1 of 2 — collect from the sender, then drop at ${_collectionPointName(delivery)}.'
+                    : 'Leg 2 of 2 — collect the parcel from ${_collectionPointName(delivery)} and deliver to the receiver.')
+              : 'Use the map to get to the pickup point. Transit does not start until you collect the package.',
+          style: const TextStyle(color: Color(0xFF6B7280), height: 1.4),
         ),
         const SizedBox(height: 20),
         _buildMiniStepper(delivery['status'] as String),
@@ -4160,6 +4185,46 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         ],
       ),
     );
+  }
+
+  // Leg 1 of a collection-point delivery ends by dropping the parcel at the
+  // point — no payment or PIN there; both happen at the receiver on leg 2.
+  Future<void> _completeLeg1(Map<String, dynamic> delivery) async {
+    final deliveryId = delivery['id'] as int;
+    final pointName = _collectionPointName(delivery);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Drop at collection point'),
+        content: Text(
+          'Confirm you have handed the parcel over at $pointName. '
+          'Dispatch will assign the final delivery leg.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Not yet'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Confirm drop'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final ok = await _updateDeliveryStatus(deliveryId, 'at_collection_point');
+    if (ok && mounted) {
+      setState(() {
+        _selectedDeliveryId = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Parcel logged at $pointName. Leg 1 complete.')),
+      );
+    }
   }
 
   // Completion: collect payment (if owed) -> enter handover PIN -> delivered.
@@ -4533,8 +4598,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final nextStatus = _nextStatus(status);
     final isUpdating = _updatingDeliveryId == deliveryId;
     final isInTransit = status == 'in_transit';
+    final isLeg1Drop = _isLeg1CollectionDrop(delivery);
     final primaryLabel = isInTransit
-        ? 'Complete delivery'
+        ? (isLeg1Drop ? 'Dropped at collection point' : 'Complete delivery')
         : 'Start delivery route';
 
     return Column(
@@ -4543,7 +4609,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         _buildStepLabel(isInTransit ? 'Step 4 of 4' : 'Step 3 of 4'),
         const SizedBox(height: 8),
         Text(
-          isInTransit ? 'Delivering package' : 'Package picked up',
+          isInTransit
+              ? (isLeg1Drop ? 'Taking parcel to collection point' : 'Delivering package')
+              : 'Package picked up',
           style: Theme.of(
             context,
           ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
@@ -4551,8 +4619,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         const SizedBox(height: 8),
         Text(
           isInTransit
-              ? 'Follow the map toward the destination. Keep tracking active so the owner sees progress.'
-              : 'Start the delivery route only when you are leaving the pickup point with the package.',
+              ? (isLeg1Drop
+                    ? 'Leg 1 of 2 — drop the parcel at ${_collectionPointName(delivery)}. Payment and the handover PIN happen at the receiver on leg 2.'
+                    : 'Follow the map toward the destination. Keep tracking active so the owner sees progress.')
+              : (_viaCollectionPoint(delivery)
+                    ? (isLeg1Drop
+                          ? 'Leg 1 of 2 — take the parcel to ${_collectionPointName(delivery)} next.'
+                          : 'Leg 2 of 2 — deliver from ${_collectionPointName(delivery)} to the receiver.')
+                    : 'Start the delivery route only when you are leaving the pickup point with the package.'),
           style: const TextStyle(color: Color(0xFF6B7280), height: 1.4),
         ),
         const SizedBox(height: 20),
@@ -4582,14 +4656,18 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 ? null
                 : () {
                     if (isInTransit) {
-                      unawaited(_startCompletion(delivery));
+                      if (isLeg1Drop) {
+                        unawaited(_completeLeg1(delivery));
+                      } else {
+                        unawaited(_startCompletion(delivery));
+                      }
                     } else {
                       unawaited(_updateDeliveryStatus(deliveryId, nextStatus));
                     }
                   },
             child: Text(isUpdating ? 'Updating...' : primaryLabel),
           ),
-        if (isInTransit) ...[
+        if (isInTransit && !isLeg1Drop) ...[
           const SizedBox(height: 8),
           const Text(
             'Automatic completion is active when destination GPS coordinates are available. You can still complete manually if needed.',

@@ -46,6 +46,13 @@ function App() {
   const [fareAmount, setFareAmount] = useState('300')
   const [receiverName, setReceiverName] = useState('')
   const [receiverPhone, setReceiverPhone] = useState('')
+  const [collectionPoints, setCollectionPoints] = useState([])
+  const [selectedCollectionPointId, setSelectedCollectionPointId] = useState('')
+  const [cpName, setCpName] = useState('')
+  const [cpAddress, setCpAddress] = useState('')
+  const [cpLatitude, setCpLatitude] = useState('-1.283300')
+  const [cpLongitude, setCpLongitude] = useState('36.816700')
+  const [leg2Selections, setLeg2Selections] = useState({})
   const [message, setMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [autoRefresh, setAutoRefresh] = useState(true)
@@ -89,7 +96,7 @@ function App() {
     }
 
     try {
-      const [driversResponse, deliveriesResponse, alertsResponse, eventsResponse] = await Promise.all([
+      const [driversResponse, deliveriesResponse, alertsResponse, eventsResponse, pointsResponse] = await Promise.all([
         fetch(`${API_BASE_URL}/admin/driver-locations`, {
           headers: { Authorization: `Bearer ${authToken}` },
         }),
@@ -102,12 +109,16 @@ function App() {
         fetch(`${API_BASE_URL}/admin/tracking-events?limit=20`, {
           headers: { Authorization: `Bearer ${authToken}` },
         }),
+        fetch(`${API_BASE_URL}/admin/collection-points`, {
+          headers: { Authorization: `Bearer ${authToken}` },
+        }),
       ])
 
       const driversData = await driversResponse.json()
       const deliveriesData = await deliveriesResponse.json()
       const alertsData = await alertsResponse.json()
       const eventsData = await eventsResponse.json()
+      const pointsData = pointsResponse.ok ? await pointsResponse.json() : { collectionPoints: [] }
 
       if (!driversResponse.ok) {
         throw new Error(driversData.message || 'Could not load drivers.')
@@ -130,6 +141,7 @@ function App() {
       setAlerts(alertsData.alerts)
       setTrackingEvents(eventsData.events)
       setTrackingSummary(alertsData.summary)
+      setCollectionPoints(pointsData.collectionPoints || [])
       notifyNewAlerts(alertsData.alerts)
 
       if (!selectedDriverId && driversData.drivers[0]) {
@@ -219,6 +231,7 @@ function App() {
           fareAmount: Number(fareAmount) || 0,
           receiverName,
           receiverPhone,
+          collectionPointId: selectedCollectionPointId ? Number(selectedCollectionPointId) : null,
         }),
       })
       const data = await response.json()
@@ -233,6 +246,99 @@ function App() {
       setDropoffAddress('')
       setReceiverName('')
       setReceiverPhone('')
+      await loadDashboardData(token)
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  async function createCollectionPoint(event) {
+    event.preventDefault()
+    setIsLoading(true)
+    setMessage('')
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/collection-points`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: cpName,
+          address: cpAddress,
+          latitude: Number(cpLatitude),
+          longitude: Number(cpLongitude),
+        }),
+      })
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Could not create the collection point.')
+      }
+
+      setMessage(`Collection point "${data.collectionPoint.name}" created.`)
+      setCpName('')
+      setCpAddress('')
+      await loadDashboardData(token)
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  async function toggleCollectionPoint(point) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/collection-points/${point.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ isActive: !point.isActive }),
+      })
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Could not update the collection point.')
+      }
+
+      await loadDashboardData(token, { silent: true })
+    } catch (error) {
+      setMessage(error.message)
+    }
+  }
+
+  async function dispatchLeg2(deliveryId) {
+    const driverId = leg2Selections[deliveryId]
+
+    if (!driverId) {
+      setMessage('Choose a rider for leg 2 first.')
+      return
+    }
+
+    setIsLoading(true)
+    setMessage('')
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/deliveries/${deliveryId}/dispatch-leg2`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ driverId: Number(driverId) }),
+      })
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Could not dispatch leg 2.')
+      }
+
+      setMessage(data.message)
       await loadDashboardData(token)
     } catch (error) {
       setMessage(error.message)
@@ -540,6 +646,22 @@ function App() {
             />
           </label>
           <label>
+            Route via collection point (optional)
+            <select
+              value={selectedCollectionPointId}
+              onChange={(event) => setSelectedCollectionPointId(event.target.value)}
+            >
+              <option value="">Direct — no collection point</option>
+              {collectionPoints
+                .filter((point) => point.isActive)
+                .map((point) => (
+                  <option key={point.id} value={point.id}>
+                    {point.name} — {point.address}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label>
             Dropoff
             <input
               value={dropoffAddress}
@@ -590,6 +712,33 @@ function App() {
                     {delivery.receiverName ? (
                       <span>Receiver: {delivery.receiverName}{delivery.receiverPhone ? ` · ${delivery.receiverPhone}` : ''}</span>
                     ) : null}
+                    {delivery.viaCollectionPoint ? (
+                      <span>
+                        Via {delivery.collectionPointName || 'collection point'} · leg {delivery.currentLeg} of 2
+                        {delivery.leg1DriverName ? ` · L1 ${delivery.leg1DriverName}` : ''}
+                        {delivery.leg2DriverName ? ` · L2 ${delivery.leg2DriverName}` : ''}
+                      </span>
+                    ) : null}
+                    {delivery.status === 'at_collection_point' ? (
+                      <div className="leg2-dispatch">
+                        <select
+                          value={leg2Selections[delivery.id] || ''}
+                          onChange={(event) =>
+                            setLeg2Selections((prev) => ({ ...prev, [delivery.id]: event.target.value }))
+                          }
+                        >
+                          <option value="">Choose leg 2 rider…</option>
+                          {drivers.map((driver) => (
+                            <option key={driver.driverId} value={driver.driverId}>
+                              {driver.driverName}
+                            </option>
+                          ))}
+                        </select>
+                        <button disabled={isLoading} type="button" onClick={() => dispatchLeg2(delivery.id)}>
+                          Dispatch leg 2
+                        </button>
+                      </div>
+                    ) : null}
                     <div className="trip-meta">
                       {delivery.trackingCode ? (
                         <span className="code-chip">{delivery.trackingCode}</span>
@@ -609,6 +758,94 @@ function App() {
                 <div>
                   <strong>No deliveries yet</strong>
                   <span>Create the first dispatch assignment to populate this board.</span>
+                </div>
+              </article>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="dispatch-drawer">
+        <form className="dispatch-form" onSubmit={createCollectionPoint}>
+          <div className="form-heading">
+            <p className="eyebrow">Network</p>
+            <h2>Collection Points</h2>
+            <p>Parcels can route sender → collection point → receiver in two rider legs.</p>
+          </div>
+          <label>
+            Name
+            <input
+              value={cpName}
+              onChange={(event) => setCpName(event.target.value)}
+              placeholder="e.g. Stan Hub CBD"
+            />
+          </label>
+          <label>
+            Address
+            <input
+              value={cpAddress}
+              onChange={(event) => setCpAddress(event.target.value)}
+              placeholder="Street / building"
+            />
+          </label>
+          <div className="coordinate-row">
+            <label>
+              Lat
+              <input
+                value={cpLatitude}
+                onChange={(event) => setCpLatitude(event.target.value)}
+                placeholder="-1.283300"
+              />
+            </label>
+            <label>
+              Lng
+              <input
+                value={cpLongitude}
+                onChange={(event) => setCpLongitude(event.target.value)}
+                placeholder="36.816700"
+              />
+            </label>
+          </div>
+          <button disabled={isLoading} type="submit">
+            {isLoading ? 'Saving...' : 'Add collection point'}
+          </button>
+        </form>
+
+        <div className="trip-board">
+          <div className="section-title trip-title">
+            <div>
+              <strong>Network Points</strong>
+              <span>Active points appear in the dispatch form and customer booking</span>
+            </div>
+            <span>{collectionPoints.length} total</span>
+          </div>
+          <div className="trip-list">
+            {collectionPoints.length ? (
+              collectionPoints.map((point) => (
+                <article className="trip-row" key={point.id}>
+                  <div>
+                    <strong>{point.name}</strong>
+                    <span>{point.address}</span>
+                    <div className="trip-meta">
+                      <span className="code-chip">
+                        {Number(point.latitude).toFixed(4)}, {Number(point.longitude).toFixed(4)}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    className={`toggle-pill ${point.isActive ? 'on' : 'off'}`}
+                    type="button"
+                    onClick={() => toggleCollectionPoint(point)}
+                  >
+                    {point.isActive ? 'Active' : 'Inactive'}
+                  </button>
+                </article>
+              ))
+            ) : (
+              <article className="trip-row empty">
+                <div>
+                  <strong>No collection points yet</strong>
+                  <span>Add the first hub to enable two-leg routing.</span>
                 </div>
               </article>
             )}

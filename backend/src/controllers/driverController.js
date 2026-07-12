@@ -1,19 +1,71 @@
 const pool = require("../config/db");
 
-const allowedDeliveryStatuses = new Set(["picked_up", "in_transit", "delivered"]);
+const allowedDeliveryStatuses = new Set([
+  "picked_up",
+  "in_transit",
+  "delivered",
+  "at_collection_point",
+]);
 const allowedTrackingEventSeverities = new Set(["info", "warning", "critical"]);
 
+function toCoord(value) {
+  return value === null || value === undefined ? null : Number(value);
+}
+
 function formatDelivery(row) {
+  const viaCollectionPoint = Boolean(row.collection_point_id);
+  const currentLeg = viaCollectionPoint ? Number(row.current_leg || 1) : 1;
+  const collectionPoint = viaCollectionPoint
+    ? {
+        id: row.collection_point_id,
+        name: row.collection_point_name || null,
+        address: row.collection_point_address || null,
+        latitude: toCoord(row.collection_point_latitude),
+        longitude: toCoord(row.collection_point_longitude),
+      }
+    : null;
+
+  // The rider sees the route for their current leg: leg 1 ends at the
+  // collection point, leg 2 starts from it. Direct deliveries are untouched.
+  let pickup = {
+    address: row.pickup_address,
+    latitude: toCoord(row.pickup_latitude),
+    longitude: toCoord(row.pickup_longitude),
+  };
+  let dropoff = {
+    address: row.dropoff_address,
+    latitude: toCoord(row.dropoff_latitude),
+    longitude: toCoord(row.dropoff_longitude),
+  };
+
+  if (collectionPoint && collectionPoint.latitude !== null) {
+    const cpStop = {
+      address: collectionPoint.name
+        ? `${collectionPoint.name} (collection point)`
+        : "Collection point",
+      latitude: collectionPoint.latitude,
+      longitude: collectionPoint.longitude,
+    };
+    if (currentLeg === 1) {
+      dropoff = cpStop;
+    } else {
+      pickup = cpStop;
+    }
+  }
+
   return {
     id: row.id,
     customerName: row.customer_name,
-    pickupAddress: row.pickup_address,
-    pickupLatitude: row.pickup_latitude === null ? null : Number(row.pickup_latitude),
-    pickupLongitude: row.pickup_longitude === null ? null : Number(row.pickup_longitude),
-    dropoffAddress: row.dropoff_address,
-    dropoffLatitude: row.dropoff_latitude === null ? null : Number(row.dropoff_latitude),
-    dropoffLongitude: row.dropoff_longitude === null ? null : Number(row.dropoff_longitude),
+    pickupAddress: pickup.address,
+    pickupLatitude: pickup.latitude,
+    pickupLongitude: pickup.longitude,
+    dropoffAddress: dropoff.address,
+    dropoffLatitude: dropoff.latitude,
+    dropoffLongitude: dropoff.longitude,
     status: row.status,
+    viaCollectionPoint,
+    currentLeg,
+    collectionPoint,
     fareAmount: row.fare_amount === undefined ? 0 : Number(row.fare_amount),
     tipAmount: row.tip_amount === undefined ? 0 : Number(row.tip_amount),
     paymentMethod: row.payment_method || "unpaid",
@@ -120,30 +172,37 @@ async function getAssignedDeliveries(req, res) {
   const result = await pool.query(
     `
       SELECT
-        id,
-        customer_name,
-        pickup_address,
-        pickup_latitude,
-        pickup_longitude,
-        dropoff_address,
-        dropoff_latitude,
-        dropoff_longitude,
-        status,
-        fare_amount,
-        tip_amount,
-        payment_method,
-        payment_status,
-        delivery_pin,
-        tracking_code,
-        receiver_name,
-        receiver_phone,
-        created_at,
-        updated_at
-      FROM deliveries
-      WHERE driver_id = $1
+        d.id,
+        d.customer_name,
+        d.pickup_address,
+        d.pickup_latitude,
+        d.pickup_longitude,
+        d.dropoff_address,
+        d.dropoff_latitude,
+        d.dropoff_longitude,
+        d.status,
+        d.fare_amount,
+        d.tip_amount,
+        d.payment_method,
+        d.payment_status,
+        d.delivery_pin,
+        d.tracking_code,
+        d.receiver_name,
+        d.receiver_phone,
+        d.collection_point_id,
+        d.current_leg,
+        cp.name AS collection_point_name,
+        cp.address AS collection_point_address,
+        cp.latitude AS collection_point_latitude,
+        cp.longitude AS collection_point_longitude,
+        d.created_at,
+        d.updated_at
+      FROM deliveries d
+      LEFT JOIN collection_points cp ON cp.id = d.collection_point_id
+      WHERE d.driver_id = $1
       ORDER BY
-        CASE WHEN status = 'delivered' THEN 1 ELSE 0 END,
-        created_at DESC
+        CASE WHEN d.status = 'delivered' THEN 1 ELSE 0 END,
+        d.created_at DESC
     `,
     [driver.id]
   );
@@ -151,6 +210,26 @@ async function getAssignedDeliveries(req, res) {
   return res.json({
     deliveries: result.rows.map(formatDelivery),
   });
+}
+
+async function loadFormattedDelivery(deliveryId) {
+  const result = await pool.query(
+    `
+      SELECT
+        d.*,
+        cp.name AS collection_point_name,
+        cp.address AS collection_point_address,
+        cp.latitude AS collection_point_latitude,
+        cp.longitude AS collection_point_longitude
+      FROM deliveries d
+      LEFT JOIN collection_points cp ON cp.id = d.collection_point_id
+      WHERE d.id = $1
+      LIMIT 1
+    `,
+    [deliveryId]
+  );
+
+  return result.rows[0] ? formatDelivery(result.rows[0]) : null;
 }
 
 async function updateDeliveryStatus(req, res) {
@@ -165,7 +244,7 @@ async function updateDeliveryStatus(req, res) {
 
   if (!allowedDeliveryStatuses.has(status)) {
     return res.status(400).json({
-      message: "Status must be picked_up, in_transit, or delivered.",
+      message: "Status must be picked_up, in_transit, at_collection_point, or delivered.",
     });
   }
 
@@ -177,17 +256,51 @@ async function updateDeliveryStatus(req, res) {
     });
   }
 
-  // Proof-of-delivery PIN: completing a delivery requires the customer's PIN
-  // when one is set on the delivery.
+  const currentResult = await pool.query(
+    `
+      SELECT id, status, delivery_pin, collection_point_id, current_leg
+      FROM deliveries
+      WHERE id = $1 AND driver_id = $2
+      LIMIT 1
+    `,
+    [deliveryId, driver.id]
+  );
+  const current = currentResult.rows[0];
+
+  if (!current) {
+    return res.status(404).json({
+      message: "Delivery was not found for this driver.",
+    });
+  }
+
+  const viaCollectionPoint = Boolean(current.collection_point_id);
+  const currentLeg = Number(current.current_leg || 1);
+
+  if (status === "at_collection_point") {
+    if (!viaCollectionPoint) {
+      return res.status(400).json({
+        message: "This delivery does not route through a collection point.",
+      });
+    }
+    if (currentLeg !== 1) {
+      return res.status(400).json({
+        message: "This delivery has already left the collection point.",
+      });
+    }
+  }
+
   if (status === "delivered") {
-    const pinCheck = await pool.query(
-      `SELECT delivery_pin FROM deliveries WHERE id = $1 AND driver_id = $2 LIMIT 1`,
-      [deliveryId, driver.id]
-    );
-    const expectedPin = pinCheck.rows[0] ? pinCheck.rows[0].delivery_pin : null;
-    if (expectedPin) {
+    if (viaCollectionPoint && currentLeg === 1) {
+      return res.status(400).json({
+        message: "Leg 1 ends at the collection point — drop the parcel there first.",
+      });
+    }
+
+    // Proof-of-delivery PIN: completing a delivery requires the customer's
+    // PIN when one is set on the delivery.
+    if (current.delivery_pin) {
       const providedPin = String(req.body.pin || "").trim();
-      if (providedPin !== expectedPin) {
+      if (providedPin !== current.delivery_pin) {
         return res.status(400).json({
           message: "Incorrect delivery PIN. Ask the customer for their handover code.",
         });
@@ -195,38 +308,36 @@ async function updateDeliveryStatus(req, res) {
     }
   }
 
-  const result = await pool.query(
-    `
-      UPDATE deliveries
-      SET status = $1, updated_at = NOW()
-      WHERE id = $2 AND driver_id = $3
-      RETURNING
-        id,
-        customer_name,
-        pickup_address,
-        pickup_latitude,
-        pickup_longitude,
-        dropoff_address,
-        dropoff_latitude,
-        dropoff_longitude,
-        status,
-        created_at,
-        updated_at
-    `,
-    [status, deliveryId, driver.id]
-  );
-
-  const delivery = result.rows[0];
-
-  if (!delivery) {
-    return res.status(404).json({
-      message: "Delivery was not found for this driver.",
-    });
+  // Marking at_collection_point ends leg 1: release the rider so the parcel
+  // waits at the point until dispatch assigns leg 2 (same or another rider).
+  if (status === "at_collection_point") {
+    await pool.query(
+      `
+        UPDATE deliveries
+        SET status = 'at_collection_point', driver_id = NULL, updated_at = NOW()
+        WHERE id = $1 AND driver_id = $2
+      `,
+      [deliveryId, driver.id]
+    );
+  } else {
+    await pool.query(
+      `
+        UPDATE deliveries
+        SET status = $1, updated_at = NOW()
+        WHERE id = $2 AND driver_id = $3
+      `,
+      [status, deliveryId, driver.id]
+    );
   }
 
+  const delivery = await loadFormattedDelivery(deliveryId);
+
   return res.json({
-    message: "Delivery status updated.",
-    delivery: formatDelivery(delivery),
+    message:
+      status === "at_collection_point"
+        ? "Parcel logged at the collection point. Dispatch will send it out for delivery."
+        : "Delivery status updated.",
+    delivery,
   });
 }
 

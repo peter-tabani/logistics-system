@@ -29,6 +29,12 @@ function formatDelivery(row) {
     receiverId: row.receiver_id || null,
     receiverName: row.receiver_name || null,
     receiverPhone: row.receiver_phone || null,
+    viaCollectionPoint: Boolean(row.collection_point_id),
+    collectionPointId: row.collection_point_id || null,
+    collectionPointName: row.collection_point_name || null,
+    currentLeg: row.collection_point_id ? Number(row.current_leg || 1) : 1,
+    leg1DriverName: row.leg1_driver_name || null,
+    leg2DriverName: row.leg2_driver_name || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -352,12 +358,22 @@ async function getDeliveries(req, res) {
       d.receiver_id,
       d.receiver_name,
       d.receiver_phone,
+      d.collection_point_id,
+      d.current_leg,
+      cp.name AS collection_point_name,
+      u1.full_name AS leg1_driver_name,
+      u2.full_name AS leg2_driver_name,
       d.created_at,
       d.updated_at
     FROM deliveries d
     LEFT JOIN driver_profiles dp ON dp.id = d.driver_id
     LEFT JOIN users u ON u.id = dp.user_id
     LEFT JOIN users sender ON sender.id = d.sender_id
+    LEFT JOIN collection_points cp ON cp.id = d.collection_point_id
+    LEFT JOIN driver_profiles dp1 ON dp1.id = d.leg1_driver_id
+    LEFT JOIN users u1 ON u1.id = dp1.user_id
+    LEFT JOIN driver_profiles dp2 ON dp2.id = d.leg2_driver_id
+    LEFT JOIN users u2 ON u2.id = dp2.user_id
     ORDER BY d.created_at DESC
   `);
 
@@ -407,11 +423,26 @@ async function createDelivery(req, res) {
   const receiverName = String(req.body.receiverName || "").trim() || null;
   const receiverPhone = String(req.body.receiverPhone || "").trim() || null;
   const fareAmount = Number(req.body.fareAmount) || 0;
+  const collectionPointId = req.body.collectionPointId
+    ? Number(req.body.collectionPointId)
+    : null;
 
   if (fareAmount < 0 || fareAmount > 1000000) {
     return res.status(400).json({
       message: "Fare must be a non-negative amount.",
     });
+  }
+
+  if (collectionPointId !== null) {
+    const cpResult = await pool.query(
+      `SELECT id FROM collection_points WHERE id = $1 AND is_active = TRUE LIMIT 1`,
+      [collectionPointId]
+    );
+    if (!cpResult.rows[0]) {
+      return res.status(404).json({
+        message: "Selected collection point was not found or is inactive.",
+      });
+    }
   }
 
   if (!Number.isInteger(driverId) || driverId <= 0) {
@@ -479,9 +510,12 @@ async function createDelivery(req, res) {
         delivery_pin,
         receiver_id,
         receiver_name,
-        receiver_phone
+        receiver_phone,
+        collection_point_id,
+        current_leg,
+        leg1_driver_id
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'assigned', $9, $10, $11, $12, $13)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'assigned', $9, $10, $11, $12, $13, $14, 1, $15)
       RETURNING id
     `,
     [
@@ -498,6 +532,8 @@ async function createDelivery(req, res) {
       receiverId,
       receiverName,
       receiverPhone,
+      collectionPointId,
+      driverId,
     ]
   );
 
@@ -519,8 +555,68 @@ async function createDelivery(req, res) {
   });
 }
 
+// Send a parcel waiting at a collection point out for final delivery. The
+// leg-2 rider may be the same rider who brought it in or a different one.
+async function dispatchLeg2(req, res) {
+  const deliveryId = Number(req.params.deliveryId);
+  const driverId = Number(req.body.driverId);
+
+  if (!Number.isInteger(deliveryId) || deliveryId <= 0) {
+    return res.status(400).json({ message: "A valid delivery is required." });
+  }
+
+  if (!Number.isInteger(driverId) || driverId <= 0) {
+    return res.status(400).json({ message: "A valid driver is required." });
+  }
+
+  const deliveryResult = await pool.query(
+    `SELECT id, status, collection_point_id FROM deliveries WHERE id = $1 LIMIT 1`,
+    [deliveryId]
+  );
+  const delivery = deliveryResult.rows[0];
+
+  if (!delivery) {
+    return res.status(404).json({ message: "Delivery not found." });
+  }
+
+  if (!delivery.collection_point_id || delivery.status !== "at_collection_point") {
+    return res.status(400).json({
+      message: "Only parcels waiting at a collection point can be dispatched for leg 2.",
+    });
+  }
+
+  const driverResult = await pool.query(
+    `SELECT id FROM driver_profiles WHERE id = $1 LIMIT 1`,
+    [driverId]
+  );
+
+  if (!driverResult.rows[0]) {
+    return res.status(404).json({ message: "Selected driver was not found." });
+  }
+
+  const result = await pool.query(
+    `
+      UPDATE deliveries
+         SET driver_id = $1,
+             leg2_driver_id = $1,
+             current_leg = 2,
+             status = 'assigned',
+             updated_at = NOW()
+       WHERE id = $2
+       RETURNING *
+    `,
+    [driverId, deliveryId]
+  );
+
+  return res.json({
+    message: "Leg 2 dispatched. The rider will collect the parcel from the collection point.",
+    delivery: formatDelivery(result.rows[0]),
+  });
+}
+
 module.exports = {
   createDelivery,
+  dispatchLeg2,
   getDeliveries,
   getLatestDriverLocations,
   getTrackingAlerts,
