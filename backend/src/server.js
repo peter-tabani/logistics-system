@@ -6,6 +6,7 @@ const pool = require("./config/db");
 const { runMigrations } = require("./db/migrate");
 const adminRoutes = require("./routes/adminRoutes");
 const authRoutes = require("./routes/authRoutes");
+const customerRoutes = require("./routes/customerRoutes");
 const driverRoutes = require("./routes/driverRoutes");
 
 const app = express();
@@ -15,6 +16,7 @@ app.use(express.json());
 
 app.use("/admin", adminRoutes);
 app.use("/auth", authRoutes);
+app.use("/customer", customerRoutes);
 app.use("/driver", driverRoutes);
 
 app.get("/", (req, res) => {

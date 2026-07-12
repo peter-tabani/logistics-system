@@ -22,6 +22,12 @@ router.post(
   requireRole("admin"),
   adminController.dispatchLeg2
 );
+router.post(
+  "/deliveries/:deliveryId/assign",
+  authenticate,
+  requireRole("admin"),
+  adminController.assignRider
+);
 
 // Collection points (two-leg routing)
 router.get("/collection-points", authenticate, requireRole("admin"), collectionPoints.listCollectionPoints);

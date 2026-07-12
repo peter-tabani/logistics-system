@@ -13,6 +13,8 @@ import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'customer_home.dart';
+
 const String configuredApiBaseUrl = String.fromEnvironment('API_BASE_URL');
 // Default backend = the always-on Render deployment, so the app works from any
 // network out of the box. A build-time --dart-define=API_BASE_URL overrides it,
@@ -567,24 +569,34 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (response.statusCode == 200) {
         final user = data['user'] as Map<String, dynamic>;
+        final role = user['role'] as String?;
 
-        if (user['role'] != 'driver') {
-          setState(() {
-            _errorMessage = 'Only driver accounts can use this app.';
-          });
-          return;
-        }
-
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (_) => DriverHomeScreen(
-              fullName: user['fullName'] as String,
-              role: user['role'] as String,
-              token: data['token'] as String,
-              phone: user['phone'] as String? ?? '',
+        if (role == 'driver') {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => DriverHomeScreen(
+                fullName: user['fullName'] as String,
+                role: role!,
+                token: data['token'] as String,
+                phone: user['phone'] as String? ?? '',
+              ),
             ),
-          ),
-        );
+          );
+        } else if (role == 'customer') {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => CustomerHomeScreen(
+                fullName: user['fullName'] as String,
+                phone: user['phone'] as String? ?? '',
+                token: data['token'] as String,
+              ),
+            ),
+          );
+        } else {
+          setState(() {
+            _errorMessage = 'Admin accounts use the web dashboard, not this app.';
+          });
+        }
       } else {
         setState(() {
           _errorMessage =
@@ -824,6 +836,22 @@ class _LoginScreenState extends State<LoginScreen> {
                           label: const Text(
                             'Server settings',
                             style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                      Center(
+                        child: TextButton(
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const CustomerSignupScreen(),
+                              ),
+                            );
+                          },
+                          style: TextButton.styleFrom(foregroundColor: Colors.white),
+                          child: const Text(
+                            'New to Stan? Create a customer account',
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
                           ),
                         ),
                       ),

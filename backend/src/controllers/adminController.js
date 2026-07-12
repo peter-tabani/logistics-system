@@ -29,6 +29,7 @@ function formatDelivery(row) {
     receiverId: row.receiver_id || null,
     receiverName: row.receiver_name || null,
     receiverPhone: row.receiver_phone || null,
+    payer: row.payer || "receiver",
     viaCollectionPoint: Boolean(row.collection_point_id),
     collectionPointId: row.collection_point_id || null,
     collectionPointName: row.collection_point_name || null,
@@ -353,6 +354,7 @@ async function getDeliveries(req, res) {
       d.payment_status,
       d.delivery_pin,
       d.tracking_code,
+      d.payer,
       d.sender_id,
       sender.full_name AS sender_name,
       d.receiver_id,
@@ -555,6 +557,63 @@ async function createDelivery(req, res) {
   });
 }
 
+// Assign a rider to a customer booking that is still waiting for dispatch.
+async function assignRider(req, res) {
+  const deliveryId = Number(req.params.deliveryId);
+  const driverId = Number(req.body.driverId);
+
+  if (!Number.isInteger(deliveryId) || deliveryId <= 0) {
+    return res.status(400).json({ message: "A valid delivery is required." });
+  }
+
+  if (!Number.isInteger(driverId) || driverId <= 0) {
+    return res.status(400).json({ message: "A valid driver is required." });
+  }
+
+  const deliveryResult = await pool.query(
+    `SELECT id, status, driver_id FROM deliveries WHERE id = $1 LIMIT 1`,
+    [deliveryId]
+  );
+  const delivery = deliveryResult.rows[0];
+
+  if (!delivery) {
+    return res.status(404).json({ message: "Delivery not found." });
+  }
+
+  if (delivery.status !== "pending" || delivery.driver_id) {
+    return res.status(400).json({
+      message: "Only unassigned pending bookings can be assigned a rider.",
+    });
+  }
+
+  const driverResult = await pool.query(
+    `SELECT id FROM driver_profiles WHERE id = $1 LIMIT 1`,
+    [driverId]
+  );
+
+  if (!driverResult.rows[0]) {
+    return res.status(404).json({ message: "Selected driver was not found." });
+  }
+
+  const result = await pool.query(
+    `
+      UPDATE deliveries
+         SET driver_id = $1,
+             leg1_driver_id = $1,
+             status = 'assigned',
+             updated_at = NOW()
+       WHERE id = $2
+       RETURNING *
+    `,
+    [driverId, deliveryId]
+  );
+
+  return res.json({
+    message: "Rider assigned. The booking is now on their assignments list.",
+    delivery: formatDelivery(result.rows[0]),
+  });
+}
+
 // Send a parcel waiting at a collection point out for final delivery. The
 // leg-2 rider may be the same rider who brought it in or a different one.
 async function dispatchLeg2(req, res) {
@@ -615,6 +674,7 @@ async function dispatchLeg2(req, res) {
 }
 
 module.exports = {
+  assignRider,
   createDelivery,
   dispatchLeg2,
   getDeliveries,

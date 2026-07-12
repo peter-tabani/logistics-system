@@ -74,6 +74,7 @@ function formatDelivery(row) {
     // production the customer alone would hold this code.
     deliveryPin: row.delivery_pin || null,
     trackingCode: row.tracking_code || null,
+    payer: row.payer || "receiver",
     receiverName: row.receiver_name || null,
     receiverPhone: row.receiver_phone || null,
     createdAt: row.created_at,
@@ -187,6 +188,7 @@ async function getAssignedDeliveries(req, res) {
         d.payment_status,
         d.delivery_pin,
         d.tracking_code,
+        d.payer,
         d.receiver_name,
         d.receiver_phone,
         d.collection_point_id,

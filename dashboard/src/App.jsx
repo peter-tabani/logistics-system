@@ -312,11 +312,11 @@ function App() {
     }
   }
 
-  async function dispatchLeg2(deliveryId) {
+  async function postRiderAction(deliveryId, path, failureText) {
     const driverId = leg2Selections[deliveryId]
 
     if (!driverId) {
-      setMessage('Choose a rider for leg 2 first.')
+      setMessage('Choose a rider first.')
       return
     }
 
@@ -324,7 +324,7 @@ function App() {
     setMessage('')
 
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/deliveries/${deliveryId}/dispatch-leg2`, {
+      const response = await fetch(`${API_BASE_URL}/admin/deliveries/${deliveryId}/${path}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -335,7 +335,7 @@ function App() {
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.message || 'Could not dispatch leg 2.')
+        throw new Error(data.message || failureText)
       }
 
       setMessage(data.message)
@@ -346,6 +346,9 @@ function App() {
       setIsLoading(false)
     }
   }
+
+  const dispatchLeg2 = (deliveryId) => postRiderAction(deliveryId, 'dispatch-leg2', 'Could not dispatch leg 2.')
+  const assignRider = (deliveryId) => postRiderAction(deliveryId, 'assign', 'Could not assign a rider.')
 
   if (!token) {
     return (
@@ -719,7 +722,7 @@ function App() {
                         {delivery.leg2DriverName ? ` · L2 ${delivery.leg2DriverName}` : ''}
                       </span>
                     ) : null}
-                    {delivery.status === 'at_collection_point' ? (
+                    {delivery.status === 'at_collection_point' || delivery.status === 'pending' ? (
                       <div className="leg2-dispatch">
                         <select
                           value={leg2Selections[delivery.id] || ''}
@@ -727,15 +730,23 @@ function App() {
                             setLeg2Selections((prev) => ({ ...prev, [delivery.id]: event.target.value }))
                           }
                         >
-                          <option value="">Choose leg 2 rider…</option>
+                          <option value="">
+                            {delivery.status === 'pending' ? 'Choose rider…' : 'Choose leg 2 rider…'}
+                          </option>
                           {drivers.map((driver) => (
                             <option key={driver.driverId} value={driver.driverId}>
                               {driver.driverName}
                             </option>
                           ))}
                         </select>
-                        <button disabled={isLoading} type="button" onClick={() => dispatchLeg2(delivery.id)}>
-                          Dispatch leg 2
+                        <button
+                          disabled={isLoading}
+                          type="button"
+                          onClick={() =>
+                            delivery.status === 'pending' ? assignRider(delivery.id) : dispatchLeg2(delivery.id)
+                          }
+                        >
+                          {delivery.status === 'pending' ? 'Assign rider' : 'Dispatch leg 2'}
                         </button>
                       </div>
                     ) : null}
@@ -745,6 +756,9 @@ function App() {
                       ) : null}
                       <span className="fare">{formatKsh(delivery.fareAmount)}</span>
                       <span className={`pay-chip ${delivery.paymentStatus}`}>{paymentLabel(delivery)}</span>
+                      {delivery.payer === 'sender' ? (
+                        <span className="pin-chip">Sender pays</span>
+                      ) : null}
                       {delivery.deliveryPin && delivery.status !== 'delivered' ? (
                         <span className="pin-chip">PIN {delivery.deliveryPin}</span>
                       ) : null}
