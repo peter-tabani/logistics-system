@@ -1,10 +1,10 @@
 :root {
-  --stan-dark: #061014;
-  --stan-panel: #0b1a20;
-  --stan-muted: #8fa3ad;
-  --stan-ink: #102027;
-  --stan-surface: #f3f7fa;
-  --stan-line: rgba(255, 255, 255, 0.1);
+  --stan-dark: #0e2140;
+  --stan-panel: #17304f;
+  --stan-muted: #93a4bd;
+  --stan-ink: #0e2140;
+  --stan-surface: #eef2f8;
+  --stan-line: rgba(255, 255, 255, 0.12);
 }
 
 .login-screen {
@@ -15,7 +15,7 @@
   background:
     radial-gradient(circle at top left, rgba(18, 50, 58, 0.72), transparent 34%),
     radial-gradient(circle at bottom right, rgba(143, 163, 173, 0.14), transparent 32%),
-    #061014;
+    #0e2140;
 }
 
 .login-card {
@@ -26,7 +26,7 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 32px;
   color: #edf7fa;
-  background: rgba(11, 26, 32, 0.92);
+  background: rgba(23, 48, 79, 0.92);
   box-shadow: 0 34px 110px rgba(0, 0, 0, 0.46);
 }
 
@@ -108,14 +108,14 @@ button {
   border-radius: 999px;
   padding: 12px 18px;
   color: #ffffff;
-  background: #061014;
+  background: #0e2140;
   font: inherit;
   font-weight: 800;
   cursor: pointer;
 }
 
 button:hover {
-  background: #0b1a20;
+  background: #17304f;
 }
 
 button:disabled {
@@ -146,7 +146,7 @@ button:disabled {
   border: 1px solid var(--stan-line);
   border-radius: 26px;
   color: #ffffff;
-  background: rgba(11, 26, 32, 0.92);
+  background: rgba(23, 48, 79, 0.92);
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
   backdrop-filter: blur(18px);
 }
@@ -165,7 +165,7 @@ button:disabled {
   place-items: center;
   overflow: hidden;
   border-radius: 15px;
-  background: #061014;
+  background: #0e2140;
 }
 
 .brand-mark img {
@@ -256,7 +256,7 @@ button:disabled {
 
 .hero-metrics {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 12px;
   align-self: stretch;
 }
@@ -264,11 +264,12 @@ button:disabled {
 .hero-metrics article {
   display: grid;
   align-content: space-between;
-  min-height: 248px;
-  padding: 20px;
+  gap: 8px;
+  min-height: 118px;
+  padding: 18px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 26px;
-  background: rgba(6, 16, 20, 0.72);
+  border-radius: 22px;
+  background: rgba(14, 33, 64, 0.72);
 }
 
 .hero-metrics span,
@@ -280,9 +281,9 @@ button:disabled {
 
 .hero-metrics strong {
   color: #ffffff;
-  font-size: 58px;
-  line-height: 0.9;
-  letter-spacing: -0.06em;
+  font-size: 40px;
+  line-height: 0.95;
+  letter-spacing: -0.04em;
 }
 
 .hero-metrics article.clear strong {
@@ -372,7 +373,7 @@ button:disabled {
   border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 30px;
   color: #ffffff;
-  background: rgba(11, 26, 32, 0.96);
+  background: rgba(23, 48, 79, 0.96);
   box-shadow: 0 28px 70px rgba(0, 0, 0, 0.22);
 }
 
@@ -423,7 +424,7 @@ button:disabled {
   gap: 3px;
   padding: 14px;
   border-radius: 18px;
-  background: #061014;
+  background: #0e2140;
 }
 
 .metric-row strong {
@@ -465,7 +466,7 @@ button:disabled {
   gap: 10px;
   padding: 12px;
   border-radius: 18px;
-  background: #061014;
+  background: #0e2140;
 }
 
 .timeline-dot {
@@ -505,7 +506,7 @@ button:disabled {
   gap: 5px;
   padding: 14px;
   border-radius: 18px;
-  background: #061014;
+  background: #0e2140;
 }
 
 .trip-board .trip-row {
@@ -536,6 +537,49 @@ button:disabled {
 .trip-row {
   grid-template-columns: 1fr auto;
   align-items: center;
+}
+
+.trip-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.trip-meta .fare {
+  color: var(--stan-dark);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.trip-meta .pay-chip,
+.trip-meta .pin-chip {
+  border-radius: 7px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+
+.trip-meta .pay-chip.paid {
+  color: #15803d;
+  background: #dcfce7;
+}
+
+.trip-meta .pay-chip.pending {
+  color: #92400e;
+  background: #fef3c7;
+}
+
+.trip-meta .pay-chip.failed {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
+.trip-meta .pin-chip {
+  color: var(--stan-dark);
+  background: #e2e8f0;
 }
 
 .driver-row small {
@@ -630,7 +674,7 @@ button:disabled {
   padding: 14px 18px;
   border-radius: 18px;
   color: #ffffff;
-  background: #061014;
+  background: #0e2140;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.28);
 }
 

@@ -2,10 +2,24 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import './App.css'
 import DriverMap from './DriverMap.jsx'
 
-const API_BASE_URL = 'http://localhost:5000'
+// Defaults to the always-on cloud backend; override with VITE_API_BASE_URL for
+// local development (e.g. http://localhost:5000).
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://stan-backend.onrender.com'
 
 function formatStatus(status) {
   return status.replaceAll('_', ' ')
+}
+
+function formatKsh(amount) {
+  return `Ksh ${Math.round(Number(amount) || 0).toLocaleString('en-KE')}`
+}
+
+function paymentLabel(delivery) {
+  if (delivery.paymentStatus === 'paid') {
+    return `Paid · ${(delivery.paymentMethod || '').toUpperCase()}`
+  }
+  if (delivery.paymentStatus === 'failed') return 'Failed'
+  return 'Unpaid'
 }
 
 function canUseBrowserNotifications() {
@@ -229,7 +243,7 @@ function App() {
               <span>Stan</span>
             </div>
             <p className="eyebrow">Logistics Command</p>
-            <h1>Shipping made simple</h1>
+            <h1>Delivery made easy</h1>
             <p>Sign in to monitor drivers, alerts, and delivery movement.</p>
           </div>
           <form onSubmit={login}>
@@ -263,6 +277,12 @@ function App() {
   const completionRate = deliveries.length
     ? Math.round((completedDeliveries.length / deliveries.length) * 100)
     : 0
+  const paidDeliveries = deliveries.filter((delivery) => delivery.paymentStatus === 'paid')
+  const paidCount = paidDeliveries.length
+  const collected = paidDeliveries.reduce(
+    (sum, delivery) => sum + (Number(delivery.fareAmount) || 0) + (Number(delivery.tipAmount) || 0),
+    0,
+  )
   const alertTone = alerts.length ? 'critical' : 'healthy'
 
   return (
@@ -326,6 +346,11 @@ function App() {
             <span>Tracking alerts</span>
             <strong>{alerts.length}</strong>
             <small>{completionRate}% completion rate</small>
+          </article>
+          <article>
+            <span>Collected (demo)</span>
+            <strong>{formatKsh(collected)}</strong>
+            <small>{paidCount} paid · Cash + M-Pesa</small>
           </article>
         </div>
       </section>
@@ -527,8 +552,14 @@ function App() {
                     <strong>{delivery.customerName}</strong>
                     <span>
                       {delivery.pickupAddress} → {delivery.dropoffAddress}
-                      {delivery.pickupLatitude && delivery.dropoffLatitude ? ' · route ready' : ' · coordinates needed'}
                     </span>
+                    <div className="trip-meta">
+                      <span className="fare">{formatKsh(delivery.fareAmount)}</span>
+                      <span className={`pay-chip ${delivery.paymentStatus}`}>{paymentLabel(delivery)}</span>
+                      {delivery.deliveryPin && delivery.status !== 'delivered' ? (
+                        <span className="pin-chip">PIN {delivery.deliveryPin}</span>
+                      ) : null}
+                    </div>
                   </div>
                   <span className={`status-pill ${delivery.status}`}>{formatStatus(delivery.status)}</span>
                 </article>

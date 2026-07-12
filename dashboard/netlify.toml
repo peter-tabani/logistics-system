@@ -1,0 +1,20 @@
+# Netlify config for the Stan dashboard (Vite static site).
+#
+# Deploy (free): push the repo to GitHub, then on https://netlify.com →
+# Add new site → Import from Git → pick the repo, set base directory to
+# "dashboard". Netlify reads this file for the build/publish settings.
+#
+# The dashboard defaults (in code) to the cloud backend
+# https://stan-backend.onrender.com, so no env var is required. To point it
+# elsewhere, set VITE_API_BASE_URL in Netlify → Site settings → Environment.
+
+[build]
+  base = "dashboard"
+  command = "npm run build"
+  publish = "dist"
+
+# SPA fallback (single-page app).
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

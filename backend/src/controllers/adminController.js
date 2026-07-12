@@ -18,6 +18,11 @@ function formatDelivery(row) {
     dropoffLatitude: toNumberOrNull(row.dropoff_latitude),
     dropoffLongitude: toNumberOrNull(row.dropoff_longitude),
     status: row.status,
+    fareAmount: row.fare_amount === undefined ? 0 : Number(row.fare_amount),
+    tipAmount: row.tip_amount === undefined ? 0 : Number(row.tip_amount),
+    paymentMethod: row.payment_method || "unpaid",
+    paymentStatus: row.payment_status || "pending",
+    deliveryPin: row.delivery_pin || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -326,6 +331,11 @@ async function getDeliveries(req, res) {
       d.dropoff_latitude,
       d.dropoff_longitude,
       d.status,
+      d.fare_amount,
+      d.tip_amount,
+      d.payment_method,
+      d.payment_status,
+      d.delivery_pin,
       d.created_at,
       d.updated_at
     FROM deliveries d
