@@ -43,6 +43,9 @@ function App() {
   const [pickupLongitude, setPickupLongitude] = useState('36.817223')
   const [dropoffLatitude, setDropoffLatitude] = useState('-1.264100')
   const [dropoffLongitude, setDropoffLongitude] = useState('36.802800')
+  const [fareAmount, setFareAmount] = useState('300')
+  const [receiverName, setReceiverName] = useState('')
+  const [receiverPhone, setReceiverPhone] = useState('')
   const [message, setMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [autoRefresh, setAutoRefresh] = useState(true)
@@ -213,6 +216,9 @@ function App() {
           dropoffAddress,
           dropoffLatitude: Number(dropoffLatitude),
           dropoffLongitude: Number(dropoffLongitude),
+          fareAmount: Number(fareAmount) || 0,
+          receiverName,
+          receiverPhone,
         }),
       })
       const data = await response.json()
@@ -225,6 +231,8 @@ function App() {
       setCustomerName('')
       setPickupAddress('')
       setDropoffAddress('')
+      setReceiverName('')
+      setReceiverPhone('')
       await loadDashboardData(token)
     } catch (error) {
       setMessage(error.message)
@@ -505,6 +513,32 @@ function App() {
               />
             </label>
           </div>
+          <div className="coordinate-row">
+            <label>
+              Receiver name
+              <input
+                value={receiverName}
+                onChange={(event) => setReceiverName(event.target.value)}
+                placeholder="Who receives the parcel"
+              />
+            </label>
+            <label>
+              Receiver phone
+              <input
+                value={receiverPhone}
+                onChange={(event) => setReceiverPhone(event.target.value)}
+                placeholder="07XXXXXXXX"
+              />
+            </label>
+          </div>
+          <label>
+            Fare (Ksh)
+            <input
+              value={fareAmount}
+              onChange={(event) => setFareAmount(event.target.value)}
+              placeholder="300"
+            />
+          </label>
           <label>
             Dropoff
             <input
@@ -553,7 +587,13 @@ function App() {
                     <span>
                       {delivery.pickupAddress} → {delivery.dropoffAddress}
                     </span>
+                    {delivery.receiverName ? (
+                      <span>Receiver: {delivery.receiverName}{delivery.receiverPhone ? ` · ${delivery.receiverPhone}` : ''}</span>
+                    ) : null}
                     <div className="trip-meta">
+                      {delivery.trackingCode ? (
+                        <span className="code-chip">{delivery.trackingCode}</span>
+                      ) : null}
                       <span className="fare">{formatKsh(delivery.fareAmount)}</span>
                       <span className={`pay-chip ${delivery.paymentStatus}`}>{paymentLabel(delivery)}</span>
                       {delivery.deliveryPin && delivery.status !== 'delivered' ? (

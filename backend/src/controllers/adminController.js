@@ -23,9 +23,19 @@ function formatDelivery(row) {
     paymentMethod: row.payment_method || "unpaid",
     paymentStatus: row.payment_status || "pending",
     deliveryPin: row.delivery_pin || null,
+    trackingCode: row.tracking_code || null,
+    senderId: row.sender_id || null,
+    senderName: row.sender_name || null,
+    receiverId: row.receiver_id || null,
+    receiverName: row.receiver_name || null,
+    receiverPhone: row.receiver_phone || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function generateDeliveryPin() {
+  return String(Math.floor(1000 + Math.random() * 9000));
 }
 
 function toNumberOrNull(value) {
@@ -336,11 +346,18 @@ async function getDeliveries(req, res) {
       d.payment_method,
       d.payment_status,
       d.delivery_pin,
+      d.tracking_code,
+      d.sender_id,
+      sender.full_name AS sender_name,
+      d.receiver_id,
+      d.receiver_name,
+      d.receiver_phone,
       d.created_at,
       d.updated_at
     FROM deliveries d
     LEFT JOIN driver_profiles dp ON dp.id = d.driver_id
     LEFT JOIN users u ON u.id = dp.user_id
+    LEFT JOIN users sender ON sender.id = d.sender_id
     ORDER BY d.created_at DESC
   `);
 
@@ -387,6 +404,15 @@ async function createDelivery(req, res) {
   const pickupLongitude = Number(req.body.pickupLongitude);
   const dropoffLatitude = Number(req.body.dropoffLatitude);
   const dropoffLongitude = Number(req.body.dropoffLongitude);
+  const receiverName = String(req.body.receiverName || "").trim() || null;
+  const receiverPhone = String(req.body.receiverPhone || "").trim() || null;
+  const fareAmount = Number(req.body.fareAmount) || 0;
+
+  if (fareAmount < 0 || fareAmount > 1000000) {
+    return res.status(400).json({
+      message: "Fare must be a non-negative amount.",
+    });
+  }
 
   if (!Number.isInteger(driverId) || driverId <= 0) {
     return res.status(400).json({
@@ -427,7 +453,17 @@ async function createDelivery(req, res) {
     });
   }
 
-  const result = await pool.query(
+  // Link the receiver to a customer account when their phone matches one.
+  let receiverId = null;
+  if (receiverPhone) {
+    const receiverResult = await pool.query(
+      `SELECT id FROM users WHERE phone = $1 AND role = 'customer' LIMIT 1`,
+      [receiverPhone]
+    );
+    receiverId = receiverResult.rows[0] ? receiverResult.rows[0].id : null;
+  }
+
+  const insertResult = await pool.query(
     `
       INSERT INTO deliveries (
         driver_id,
@@ -438,22 +474,15 @@ async function createDelivery(req, res) {
         dropoff_address,
         dropoff_latitude,
         dropoff_longitude,
-        status
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'assigned')
-      RETURNING
-        id,
-        driver_id,
-        customer_name,
-        pickup_address,
-        pickup_latitude,
-        pickup_longitude,
-        dropoff_address,
-        dropoff_latitude,
-        dropoff_longitude,
         status,
-        created_at,
-        updated_at
+        fare_amount,
+        delivery_pin,
+        receiver_id,
+        receiver_name,
+        receiver_phone
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'assigned', $9, $10, $11, $12, $13)
+      RETURNING id
     `,
     [
       driverId,
@@ -464,7 +493,24 @@ async function createDelivery(req, res) {
       dropoffAddress,
       dropoffLatitude,
       dropoffLongitude,
+      fareAmount,
+      generateDeliveryPin(),
+      receiverId,
+      receiverName,
+      receiverPhone,
     ]
+  );
+
+  const deliveryId = insertResult.rows[0].id;
+
+  const result = await pool.query(
+    `
+      UPDATE deliveries
+         SET tracking_code = 'STAN-' || LPAD(id::text, 6, '0')
+       WHERE id = $1
+       RETURNING *
+    `,
+    [deliveryId]
   );
 
   return res.status(201).json({

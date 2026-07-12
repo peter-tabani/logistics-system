@@ -21,6 +21,9 @@ function formatDelivery(row) {
     // DEMO: the handover PIN is surfaced to the app as a demo hint. In
     // production the customer alone would hold this code.
     deliveryPin: row.delivery_pin || null,
+    trackingCode: row.tracking_code || null,
+    receiverName: row.receiver_name || null,
+    receiverPhone: row.receiver_phone || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -131,6 +134,9 @@ async function getAssignedDeliveries(req, res) {
         payment_method,
         payment_status,
         delivery_pin,
+        tracking_code,
+        receiver_name,
+        receiver_phone,
         created_at,
         updated_at
       FROM deliveries
