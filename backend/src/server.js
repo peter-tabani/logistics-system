@@ -3,6 +3,7 @@ const cors = require("cors");
 require("dotenv").config();
 
 const pool = require("./config/db");
+const { runMigrations } = require("./db/migrate");
 const adminRoutes = require("./routes/adminRoutes");
 const authRoutes = require("./routes/authRoutes");
 const driverRoutes = require("./routes/driverRoutes");
@@ -46,6 +47,18 @@ app.get("/db-health", async (req, res) => {
 });
 
 const PORT = process.env.PORT || 5000;
+
+// Apply pending schema migrations at boot so deploys stay in sync. The server
+// still starts if the database is unreachable — /db-health will report it.
+runMigrations(pool)
+  .then((result) => {
+    if (result.appliedNow > 0) {
+      console.log(`Applied ${result.appliedNow} schema migration(s) at boot.`);
+    }
+  })
+  .catch((error) => {
+    console.error(`Migrations failed at boot: ${error.message}`);
+  });
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
