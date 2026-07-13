@@ -1,12 +1,18 @@
 // Uber-style driver features for Stan: profile, documents, availability,
 // wallet/earnings, and payment collection.
 //
-// PAYMENTS ARE DEMO/MOCK ONLY — no Daraja API, no real money. The M-Pesa
-// STK-push flow is simulated. See CLAUDE.md.
+// Payments are REAL-READY, NOT LIVE: collection goes through the Daraja
+// client (services/daraja.js), which runs in simulate mode until the owner
+// configures credentials. No real money moves in simulate mode. See CLAUDE.md
+// and docs/NEEDS_FROM_OWNER.md.
 
 const pool = require("../config/db");
-
-const STAN_SERVICE_FEE_RATE = 0.15; // Stan's demo platform fee on each fare.
+const daraja = require("../services/daraja");
+const { creditEarningOnce, STAN_SERVICE_FEE_RATE } = require("../services/wallet");
+const {
+  settleSuccessfulPayment,
+  markPaymentFailed,
+} = require("./paymentsController");
 
 const DOCUMENT_TYPES = ["license", "ntsa", "psv", "insurance", "inspection"];
 
@@ -24,18 +30,6 @@ function toNumber(value) {
 
 function round2(value) {
   return Math.round(value * 100) / 100;
-}
-
-// DEMO M-Pesa receipt code, e.g. "QGT4AB9KD1". Not a real Safaricom receipt.
-function demoMpesaReference() {
-  const letters = "ABCDEFGHJKLMNPQRSTUVWXYZ";
-  const digits = "0123456789";
-  let code = "";
-  for (let i = 0; i < 10; i += 1) {
-    const pool = i % 2 === 0 ? letters : digits;
-    code += pool[Math.floor(Math.random() * pool.length)];
-  }
-  return code;
 }
 
 function proTier(completedTrips) {
@@ -308,7 +302,7 @@ async function cashOut(req, res) {
     return res.status(400).json({ message: "Amount exceeds your wallet balance." });
   }
 
-  const reference = demoMpesaReference();
+  const reference = daraja.simulatedReceipt();
   const result = await pool.query(
     `
       INSERT INTO wallet_transactions (driver_id, type, amount, method, status, reference, description)
@@ -331,7 +325,8 @@ async function cashOut(req, res) {
 async function loadOwnedDelivery(driverId, deliveryId) {
   const result = await pool.query(
     `
-      SELECT id, driver_id, fare_amount, tip_amount, payment_method, payment_status, delivery_pin
+      SELECT id, driver_id, fare_amount, tip_amount, payment_method, payment_status,
+             delivery_pin, tracking_code, payer, receiver_phone
         FROM deliveries
        WHERE id = $1 AND driver_id = $2
        LIMIT 1
@@ -339,38 +334,6 @@ async function loadOwnedDelivery(driverId, deliveryId) {
     [deliveryId, driverId]
   );
   return result.rows[0];
-}
-
-async function creditEarning(driverId, delivery, method, reference) {
-  const gross = toNumber(delivery.fare_amount);
-  const fee = round2(gross * STAN_SERVICE_FEE_RATE);
-  const net = round2(gross - fee);
-  const tip = toNumber(delivery.tip_amount);
-
-  await pool.query(
-    `
-      INSERT INTO wallet_transactions (driver_id, type, amount, delivery_id, method, status, reference, description)
-      VALUES ($1, 'earning', $2, $3, $4, 'completed', $5, $6)
-    `,
-    [
-      driverId,
-      net,
-      delivery.id,
-      method,
-      reference,
-      `Delivery #${delivery.id} fare (gross ${gross}, fee ${fee})`,
-    ]
-  );
-
-  if (tip > 0) {
-    await pool.query(
-      `
-        INSERT INTO wallet_transactions (driver_id, type, amount, delivery_id, method, status, description)
-        VALUES ($1, 'tip', $2, $3, $4, 'completed', $5)
-      `,
-      [driverId, tip, delivery.id, method, `Delivery #${delivery.id} tip`]
-    );
-  }
 }
 
 async function collectPayment(req, res) {
@@ -396,32 +359,82 @@ async function collectPayment(req, res) {
     delivery.tip_amount = tipAmount;
   }
 
+  const amountDue = round2(toNumber(delivery.fare_amount) + toNumber(delivery.tip_amount));
+
   if (method === "cash") {
     await pool.query(
       `UPDATE deliveries SET payment_method = 'cash', payment_status = 'paid', updated_at = NOW() WHERE id = $1`,
       [deliveryId]
     );
-    await creditEarning(driver.id, delivery, "cash", null);
+    await pool.query(
+      `
+        INSERT INTO payments (delivery_id, payer_role, method, amount, status, mode, account_reference)
+        VALUES ($1, $2, 'cash', $3, 'success', $4, $5)
+      `,
+      [deliveryId, delivery.payer || "receiver", amountDue, daraja.mode(), delivery.tracking_code]
+    );
+    await creditEarningOnce(driver.id, delivery, "cash", null);
     return res.json({ message: "Cash payment recorded.", paymentStatus: "paid", method: "cash" });
   }
 
-  // M-Pesa: simulate an STK push. Mark pending; the app calls /mpesa-result
-  // after the (simulated) customer prompt. DEMO ONLY — no Daraja call here.
-  const checkoutRequestId = `ws_CO_DEMO_${Date.now()}`;
+  // M-Pesa STK push through the Daraja client. In simulate mode this returns
+  // fake identifiers and the app drives the simulated prompt + /mpesa-result;
+  // in sandbox/production the result arrives via the Safaricom callback and
+  // the app polls /payment-status.
+  const customerPhone = String(req.body.customerPhone || delivery.receiver_phone || "").trim();
+
+  let stk;
+  try {
+    stk = await daraja.stkPush({
+      phone: customerPhone || "0700000000",
+      amount: amountDue,
+      accountReference: delivery.tracking_code || `STAN-${deliveryId}`,
+      description: "Stan delivery",
+    });
+  } catch (error) {
+    return res.status(502).json({ message: `M-Pesa request failed: ${error.message}` });
+  }
+
+  await pool.query(
+    `
+      INSERT INTO payments (delivery_id, payer_role, method, amount, phone, status, mode, checkout_request_id, merchant_request_id, account_reference)
+      VALUES ($1, $2, 'mpesa_stk', $3, $4, 'pending', $5, $6, $7, $8)
+    `,
+    [
+      deliveryId,
+      delivery.payer || "receiver",
+      amountDue,
+      customerPhone ? daraja.normalizeMsisdn(customerPhone) : null,
+      stk.mode,
+      stk.checkoutRequestId,
+      stk.merchantRequestId,
+      delivery.tracking_code,
+    ]
+  );
+
   await pool.query(
     `UPDATE deliveries SET payment_method = 'mpesa', payment_status = 'pending', updated_at = NOW() WHERE id = $1`,
     [deliveryId]
   );
 
   return res.json({
-    message: "STK push sent to customer (DEMO).",
+    message:
+      stk.mode === "simulate"
+        ? "STK push sent to customer (DEMO)."
+        : "STK push sent. Ask the customer to enter their M-Pesa PIN.",
     paymentStatus: "pending",
     method: "mpesa",
-    checkoutRequestId,
-    demo: true,
+    mode: stk.mode,
+    simulated: stk.mode === "simulate",
+    checkoutRequestId: stk.checkoutRequestId,
+    paybillShortcode: daraja.paybillShortcode(),
+    accountReference: delivery.tracking_code,
+    demo: stk.mode === "simulate",
   });
 }
 
+// Resolves a SIMULATED STK push (the app's fake customer prompt). Payments
+// running against real Daraja are settled by the Safaricom callback instead.
 async function mpesaResult(req, res) {
   const driver = await getDriverProfile(req.user.userId);
   if (!driver) return res.status(404).json({ message: "Driver profile not found." });
@@ -435,20 +448,44 @@ async function mpesaResult(req, res) {
     return res.json({ message: "Already paid.", paymentStatus: "paid" });
   }
 
+  const paymentResult = await pool.query(
+    `SELECT * FROM payments
+      WHERE delivery_id = $1 AND method = 'mpesa_stk' AND status = 'pending'
+      ORDER BY id DESC LIMIT 1`,
+    [deliveryId]
+  );
+  const payment = paymentResult.rows[0];
+
+  if (payment && payment.mode !== "simulate") {
+    return res.status(400).json({
+      message: "This payment runs against real Daraja — poll payment-status for the result.",
+    });
+  }
+
   if (!success) {
-    await pool.query(
-      `UPDATE deliveries SET payment_status = 'failed', updated_at = NOW() WHERE id = $1`,
-      [deliveryId]
-    );
+    if (payment) {
+      await markPaymentFailed(payment, "Customer cancelled the simulated prompt.");
+    } else {
+      await pool.query(
+        `UPDATE deliveries SET payment_status = 'failed', updated_at = NOW() WHERE id = $1`,
+        [deliveryId]
+      );
+    }
     return res.json({ message: "Customer cancelled the M-Pesa prompt (DEMO).", paymentStatus: "failed" });
   }
 
-  const reference = demoMpesaReference();
-  await pool.query(
-    `UPDATE deliveries SET payment_status = 'paid', updated_at = NOW() WHERE id = $1`,
-    [deliveryId]
-  );
-  await creditEarning(driver.id, delivery, "mpesa", reference);
+  const reference = daraja.simulatedReceipt();
+
+  if (payment) {
+    await settleSuccessfulPayment(payment, { receipt: reference });
+  } else {
+    // Back-compat: no payment row (older app flow) — settle directly.
+    await pool.query(
+      `UPDATE deliveries SET payment_status = 'paid', updated_at = NOW() WHERE id = $1`,
+      [deliveryId]
+    );
+    await creditEarningOnce(driver.id, delivery, "mpesa", reference);
+  }
 
   return res.json({
     message: "M-Pesa payment received (DEMO).",

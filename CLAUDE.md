@@ -22,14 +22,20 @@ Stan is a logistics / fleet-tracking system with three parts:
 - Android emulator: `http://10.0.2.2:5000`
 - Real phone:       `http://<PC_LAN_IP>:5000` (passed via `--dart-define=API_BASE_URL=...`)
 
-## Payments — DEMO / MOCK ONLY (hard rule)
-Payments in Stan are **simulated**, not real. This applies to driver earnings,
-wallet cash-out, and customer payment collection (Cash and M-Pesa).
-- **No Daraja/M-Pesa API, no real credentials, no real money.** The M-Pesa
-  STK-push flow is *simulated* in the app and clearly labelled "DEMO".
-- Cash and M-Pesa both have full step-by-step flows for demonstration only.
-- Anything a real integration would need is tracked in `docs/NEEDS_FROM_OWNER.md`.
-- Do not add real payment gateways/credentials without an explicit task to do so.
+## Payments — REAL-READY, SANDBOX, NO LIVE CREDENTIALS (hard rule)
+Payments are built against Safaricom **Daraja** (M-Pesa STK Push + Paybill
+C2B) via `backend/src/services/daraja.js`, but the system is **not live**:
+- With no credentials configured, everything runs in **simulate mode**: no
+  network calls to Safaricom, no real money, flows labelled "DEMO" in the app.
+- The owner supplies (never committed, `.env` only): `MPESA_ENV`
+  (sandbox|production), `MPESA_CONSUMER_KEY`, `MPESA_CONSUMER_SECRET`,
+  `MPESA_SHORTCODE`, `MPESA_PASSKEY`, and a public HTTPS
+  `MPESA_CALLBACK_BASE_URL`. See `docs/NEEDS_FROM_OWNER.md`.
+- **Never commit real credentials, never enable production mode, and never
+  move real money without an explicit task from the owner.**
+- Who pays is per-delivery (`payer` = sender pays at booking OR receiver pays
+  on delivery); channels are STK Push (primary), Paybill C2B with the
+  tracking code as account number (fallback), and cash.
 
 ## Working agreement — follow this on EVERY task
 1. Work in small, complete steps. After each finished step, commit to git with a clear message.

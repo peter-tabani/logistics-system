@@ -3,6 +3,7 @@ const express = require("express");
 const driverController = require("../controllers/driverController");
 const features = require("../controllers/driverFeaturesController");
 const messages = require("../controllers/messagesController");
+const payments = require("../controllers/paymentsController");
 const { authenticate, requireRole } = require("../middleware/authMiddleware");
 
 const router = express.Router();
@@ -30,9 +31,10 @@ router.patch("/documents/:docType", features.updateDocument);
 router.get("/earnings", features.getEarnings);
 router.post("/wallet/cashout", features.cashOut);
 
-// Payment collection at delivery (DEMO payments)
+// Payment collection at delivery (Daraja-backed; simulate mode without keys)
 router.post("/deliveries/:deliveryId/collect-payment", features.collectPayment);
 router.post("/deliveries/:deliveryId/mpesa-result", features.mpesaResult);
+router.get("/deliveries/:deliveryId/payment-status", payments.driverPaymentStatus);
 
 // Safety
 router.post("/sos", features.triggerSos);

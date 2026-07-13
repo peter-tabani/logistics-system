@@ -1,4 +1,5 @@
 const pool = require("../config/db");
+const { creditEarningOnce } = require("../services/wallet");
 
 const allowedDeliveryStatuses = new Set([
   "picked_up",
@@ -330,6 +331,23 @@ async function updateDeliveryStatus(req, res) {
       `,
       [status, deliveryId, driver.id]
     );
+  }
+
+  // Prepaid bookings (e.g. sender paid at booking, before a rider existed)
+  // credit the delivering rider now. No-op when already credited.
+  if (status === "delivered") {
+    const paidResult = await pool.query(`SELECT * FROM deliveries WHERE id = $1 LIMIT 1`, [
+      deliveryId,
+    ]);
+    const paidRow = paidResult.rows[0];
+    if (paidRow && paidRow.payment_status === "paid") {
+      await creditEarningOnce(
+        driver.id,
+        paidRow,
+        paidRow.payment_method === "cash" ? "cash" : "mpesa",
+        null
+      );
+    }
   }
 
   const delivery = await loadFormattedDelivery(deliveryId);

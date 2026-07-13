@@ -8,6 +8,7 @@ const adminRoutes = require("./routes/adminRoutes");
 const authRoutes = require("./routes/authRoutes");
 const customerRoutes = require("./routes/customerRoutes");
 const driverRoutes = require("./routes/driverRoutes");
+const paymentsRoutes = require("./routes/paymentsRoutes");
 
 const app = express();
 
@@ -18,6 +19,7 @@ app.use("/admin", adminRoutes);
 app.use("/auth", authRoutes);
 app.use("/customer", customerRoutes);
 app.use("/driver", driverRoutes);
+app.use("/payments", paymentsRoutes);
 
 app.get("/", (req, res) => {
   res.send("Logistics API Running");

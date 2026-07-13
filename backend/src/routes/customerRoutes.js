@@ -1,6 +1,7 @@
 const express = require("express");
 
 const customerController = require("../controllers/customerController");
+const payments = require("../controllers/paymentsController");
 const { authenticate, requireRole } = require("../middleware/authMiddleware");
 
 const router = express.Router();
@@ -13,5 +14,10 @@ router.get("/fare-quote", customerController.quoteFare);
 router.post("/deliveries", customerController.bookDelivery);
 router.get("/deliveries", customerController.listMyDeliveries);
 router.get("/deliveries/:deliveryId", customerController.getMyDelivery);
+
+// Sender pay-now (M-Pesa STK; simulate mode without Daraja keys)
+router.post("/deliveries/:deliveryId/pay", payments.customerPayNow);
+router.post("/deliveries/:deliveryId/pay/simulate-result", payments.customerSimulateResult);
+router.get("/deliveries/:deliveryId/payment-status", payments.customerPaymentStatus);
 
 module.exports = router;

@@ -4276,7 +4276,30 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   Future<bool> _showPaymentSheet(Map<String, dynamic> delivery) async {
     final deliveryId = delivery['id'] as int;
     final fare = (delivery['fareAmount'] as num?)?.toDouble() ?? 0;
-    final phoneController = TextEditingController(text: '0712 345 678');
+    final phoneController = TextEditingController(
+      text: delivery['receiverPhone'] as String? ?? '0712 345 678',
+    );
+    final trackingCode = delivery['trackingCode'] as String?;
+
+    // Payment mode + Paybill number from the backend (simulate until the
+    // owner configures Daraja credentials).
+    var simulatedMode = true;
+    var paybillShortcode = '';
+    try {
+      final cfgResponse = await http.get(
+        Uri.parse('$apiBaseUrl/payments/config'),
+        headers: {'Authorization': 'Bearer ${widget.token}'},
+      ).timeout(apiRequestTimeout);
+      if (cfgResponse.statusCode == 200) {
+        final cfg = jsonDecode(cfgResponse.body) as Map<String, dynamic>;
+        simulatedMode = cfg['simulated'] != false;
+        paybillShortcode = cfg['paybillShortcode'] as String? ?? '';
+      }
+    } catch (_) {
+      // Config is a hint only; the collect call reports the real mode.
+    }
+
+    if (!mounted) return false;
 
     final result = await showModalBottomSheet<bool>(
       context: context,
@@ -4325,7 +4348,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                         style: TextStyle(color: stanDark, fontSize: 18, fontWeight: FontWeight.w900),
                       ),
                       const SizedBox(width: 8),
-                      _demoChip(),
+                      if (simulatedMode) _demoChip(),
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -4375,6 +4398,20 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                         : const Icon(Icons.payments_outlined, size: 18),
                     label: const Text('Cash received', style: TextStyle(fontWeight: FontWeight.w900)),
                   ),
+                  if (trackingCode != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      'Paybill fallback: the customer can pay Paybill '
+                      '${paybillShortcode.isEmpty ? '(pending setup)' : paybillShortcode} '
+                      'with account $trackingCode — it auto-matches to this delivery.',
+                      style: const TextStyle(
+                        color: Color(0xFF94A3B8),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             );
@@ -4438,7 +4475,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   Future<bool> _collectMpesa(int deliveryId, String phone, double fare) async {
-    // 1. Initiate the (simulated) STK push.
+    // 1. Initiate the STK push (real Daraja when configured, simulated
+    //    otherwise — the backend reports which mode ran).
+    Map<String, dynamic> initData;
     try {
       final response = await http.post(
         Uri.parse('$apiBaseUrl/driver/deliveries/$deliveryId/collect-payment'),
@@ -4448,11 +4487,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         },
         body: jsonEncode({'method': 'mpesa', 'customerPhone': phone}),
       ).timeout(apiRequestTimeout);
+      initData = jsonDecode(response.body) as Map<String, dynamic>;
       if (response.statusCode != 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(data['message'] as String? ?? 'Could not start M-Pesa.')),
+            SnackBar(content: Text(initData['message'] as String? ?? 'Could not start M-Pesa.')),
           );
         }
         return false;
@@ -4468,33 +4507,46 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
     if (!mounted) return false;
 
-    // 2. Show the STK dialog; its submit confirms the (simulated) result.
+    final simulated = initData['simulated'] != false;
+
+    // 2. Show the STK dialog. In simulate mode its submit resolves the fake
+    //    prompt; in sandbox/production it polls until Safaricom's callback
+    //    lands (or times out).
     final result = await showStkPush(
       context,
       title: 'M-Pesa payment',
       phone: phone,
       amountText: formatKsh(fare),
-      pendingNote: 'Ask the customer to enter their M-Pesa PIN on their phone.',
+      pendingNote: simulated
+          ? 'Ask the customer to enter their M-Pesa PIN on their phone.'
+          : 'Waiting for the customer to enter their M-Pesa PIN…',
       submit: () async {
-        final response = await http.post(
-          Uri.parse('$apiBaseUrl/driver/deliveries/$deliveryId/mpesa-result'),
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ${widget.token}',
-          },
-          body: jsonEncode({'success': true}),
-        ).timeout(apiRequestTimeout);
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        if (response.statusCode == 200 && data['paymentStatus'] == 'paid') {
+        if (simulated) {
+          final response = await http.post(
+            Uri.parse('$apiBaseUrl/driver/deliveries/$deliveryId/mpesa-result'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ${widget.token}',
+            },
+            body: jsonEncode({'success': true}),
+          ).timeout(apiRequestTimeout);
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          if (response.statusCode == 200 && data['paymentStatus'] == 'paid') {
+            return StkResult(
+              success: true,
+              reference: data['reference'] as String?,
+              message: 'Payment received from the customer.',
+            );
+          }
           return StkResult(
-            success: true,
-            reference: data['reference'] as String?,
-            message: 'Payment received from the customer.',
+            success: false,
+            message: data['message'] as String? ?? 'M-Pesa payment failed.',
           );
         }
-        return StkResult(
-          success: false,
-          message: data['message'] as String? ?? 'M-Pesa payment failed.',
+
+        return pollPaymentStatus(
+          url: '$apiBaseUrl/driver/deliveries/$deliveryId/payment-status',
+          token: widget.token,
         );
       },
     );
@@ -4921,6 +4973,57 @@ class StkResult {
   final bool success;
   final String? reference;
   final String message;
+}
+
+/// Polls a payment-status endpoint until the payment settles (via the
+/// Safaricom callback) or the wait times out. Used for real (sandbox or
+/// production) Daraja STK pushes, where the result arrives asynchronously.
+Future<StkResult> pollPaymentStatus({
+  required String url,
+  required String token,
+  Duration timeout = const Duration(seconds: 90),
+  Duration interval = const Duration(seconds: 3),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+
+  while (DateTime.now().isBefore(deadline)) {
+    try {
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {'Authorization': 'Bearer $token'},
+      ).timeout(apiRequestTimeout);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final payment = data['payment'] as Map<String, dynamic>?;
+        final paymentStatus = data['paymentStatus'] as String?;
+        final status = payment?['status'] as String?;
+
+        if (paymentStatus == 'paid' || status == 'success') {
+          return StkResult(
+            success: true,
+            reference: payment?['reference'] as String?,
+            message: 'Payment received.',
+          );
+        }
+        if (paymentStatus == 'failed' || status == 'failed') {
+          return StkResult(
+            success: false,
+            message: (payment?['failureReason'] as String?) ?? 'M-Pesa payment failed.',
+          );
+        }
+      }
+    } catch (_) {
+      // Transient network issue — keep polling until the deadline.
+    }
+
+    await Future<void>.delayed(interval);
+  }
+
+  return const StkResult(
+    success: false,
+    message: 'Timed out waiting for M-Pesa confirmation. Check the payment status and retry.',
+  );
 }
 
 /// Reusable DEMO M-Pesa STK-push dialog. Shows the "approve on your phone"

@@ -493,6 +493,96 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     }
   }
 
+  /* ------------------------------ Pay now -------------------------------- */
+
+  // Sender pays via M-Pesa STK push. Real Daraja when the owner has
+  // configured credentials; otherwise the simulated prompt (DEMO).
+  Future<void> _payNow(Map<String, dynamic> delivery) async {
+    final deliveryId = delivery['id'] as int;
+
+    Map<String, dynamic> initData;
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$apiBaseUrl/customer/deliveries/$deliveryId/pay'),
+            headers: {..._authHeaders, 'Content-Type': 'application/json'},
+            body: jsonEncode(<String, dynamic>{}),
+          )
+          .timeout(apiRequestTimeout);
+      initData = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode != 200) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(initData['message'] as String? ?? 'Could not start the payment.'),
+            ),
+          );
+        }
+        return;
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not reach the server.')),
+        );
+      }
+      return;
+    }
+
+    if (!mounted) return;
+
+    final simulated = initData['simulated'] != false;
+
+    final result = await showStkPush(
+      context,
+      title: 'Pay for delivery',
+      phone: widget.phone,
+      amountText: formatKsh((delivery['fareAmount'] as num?) ?? 0),
+      pendingNote: simulated
+          ? 'Approve the M-Pesa prompt (DEMO simulation).'
+          : 'Enter your M-Pesa PIN on your phone.',
+      submit: () async {
+        if (simulated) {
+          final response = await http
+              .post(
+                Uri.parse(
+                  '$apiBaseUrl/customer/deliveries/$deliveryId/pay/simulate-result',
+                ),
+                headers: {..._authHeaders, 'Content-Type': 'application/json'},
+                body: jsonEncode({'success': true}),
+              )
+              .timeout(apiRequestTimeout);
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          if (response.statusCode == 200 && data['paymentStatus'] == 'paid') {
+            return StkResult(
+              success: true,
+              reference: data['reference'] as String?,
+              message: 'Payment received. Thank you!',
+            );
+          }
+          return StkResult(
+            success: false,
+            message: data['message'] as String? ?? 'Payment failed.',
+          );
+        }
+
+        return pollPaymentStatus(
+          url: '$apiBaseUrl/customer/deliveries/$deliveryId/payment-status',
+          token: widget.token,
+        );
+      },
+    );
+
+    if (result != null && result.success) {
+      await _loadDeliveries();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Delivery paid. You can track it under My Parcels.')),
+        );
+      }
+    }
+  }
+
   /* ------------------------------ Detail sheet --------------------------- */
 
   List<({String label, bool done})> _timeline(Map<String, dynamic> delivery) {
@@ -731,6 +821,39 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                     ],
                   ),
                 ),
+                if (delivery['role'] == 'sender' &&
+                    delivery['payer'] == 'sender' &&
+                    delivery['paymentStatus'] != 'paid' &&
+                    ((delivery['fareAmount'] as num?) ?? 0) > 0) ...[
+                  const SizedBox(height: 14),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF1AAE4F),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    onPressed: () async {
+                      Navigator.of(sheetContext).pop();
+                      await _payNow(delivery);
+                    },
+                    icon: const Icon(Icons.smartphone, size: 18),
+                    label: const Text(
+                      'Pay now with M-Pesa',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                  if (delivery['trackingCode'] != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'Or pay via Paybill using account ${delivery['trackingCode']} — it matches automatically.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Color(0xFF94A3B8),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ],
                 if (riderPoint != null) ...[
                   const SizedBox(height: 16),
                   Text(
