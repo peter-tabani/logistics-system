@@ -14,6 +14,8 @@ router.get("/fare-quote", customerController.quoteFare);
 router.post("/deliveries", customerController.bookDelivery);
 router.get("/deliveries", customerController.listMyDeliveries);
 router.get("/deliveries/:deliveryId", customerController.getMyDelivery);
+router.post("/deliveries/:deliveryId/cancel", customerController.cancelDelivery);
+router.patch("/account", customerController.updateAccount);
 
 // Sender pay-now (M-Pesa STK; simulate mode without Daraja keys)
 router.post("/deliveries/:deliveryId/pay", payments.customerPayNow);

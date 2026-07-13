@@ -680,6 +680,11 @@ button:disabled {
   background: #ede9fe;
 }
 
+.status-pill.cancelled {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
 .leg2-dispatch {
   display: flex;
   gap: 8px;

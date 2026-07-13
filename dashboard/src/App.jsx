@@ -548,7 +548,9 @@ function App() {
     )
   }
 
-  const activeDeliveries = deliveries.filter((delivery) => delivery.status !== 'delivered')
+  const activeDeliveries = deliveries.filter(
+    (delivery) => delivery.status !== 'delivered' && delivery.status !== 'cancelled',
+  )
   const completedDeliveries = deliveries.filter((delivery) => delivery.status === 'delivered')
   const liveDrivers = trackingSummary?.driversWithRecentLocation ?? 0
   const activeDrivers = trackingSummary?.activeDrivers ?? 0

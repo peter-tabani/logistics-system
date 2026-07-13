@@ -37,6 +37,7 @@ async function tripsPerRider(req, res) {
         v.plate_number,
         (SELECT COUNT(*) FROM deliveries d
           WHERE (d.driver_id = dp.id OR d.leg1_driver_id = dp.id OR d.leg2_driver_id = dp.id)
+            AND d.status <> 'cancelled'
             AND d.created_at::date BETWEEN $1 AND $2) AS trips_total,
         (SELECT COUNT(*) FROM deliveries d
           WHERE d.driver_id = dp.id AND d.status = 'delivered'

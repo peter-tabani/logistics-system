@@ -132,7 +132,10 @@ async function bookDelivery(req, res) {
   const receiverName = String(req.body.receiverName || "").trim();
   const receiverPhone = String(req.body.receiverPhone || "").trim();
   const payer = String(req.body.payer || "receiver").trim();
-  const notes = String(req.body.notes || "").trim() || null;
+  const notes = String(req.body.notes || "").trim().slice(0, 500) || null;
+  const packageSize = ["small", "medium", "large"].includes(req.body.packageSize)
+    ? req.body.packageSize
+    : null;
   const collectionPointId = req.body.collectionPointId
     ? Number(req.body.collectionPointId)
     : null;
@@ -196,9 +199,9 @@ async function bookDelivery(req, res) {
         dropoff_address, dropoff_latitude, dropoff_longitude,
         status, fare_amount, delivery_pin,
         sender_id, receiver_id, receiver_name, receiver_phone,
-        collection_point_id, current_leg, payer, notes
+        collection_point_id, current_leg, payer, notes, package_size
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, $10, $11, $12, $13, $14, 1, $15, $16)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, $10, $11, $12, $13, $14, 1, $15, $16, $17)
       RETURNING id
     `,
     [
@@ -218,6 +221,7 @@ async function bookDelivery(req, res) {
       collectionPointId,
       payer,
       notes,
+      packageSize,
     ]
   );
 
@@ -242,26 +246,44 @@ function formatCustomerDelivery(row, userId) {
   const isSender = row.sender_id === userId;
   const isReceiver = !isSender;
 
+  const toCoord = (value) => (value === null || value === undefined ? null : Number(value));
+
   return {
     id: row.id,
     role: isSender ? "sender" : "receiver",
     trackingCode: row.tracking_code || null,
     status: row.status,
     pickupAddress: row.pickup_address,
+    pickupLatitude: toCoord(row.pickup_latitude),
+    pickupLongitude: toCoord(row.pickup_longitude),
     dropoffAddress: row.dropoff_address,
+    dropoffLatitude: toCoord(row.dropoff_latitude),
+    dropoffLongitude: toCoord(row.dropoff_longitude),
     receiverName: row.receiver_name || null,
     receiverPhone: row.receiver_phone || null,
     senderName: row.sender_name || row.customer_name || null,
     viaCollectionPoint: Boolean(row.collection_point_id),
     collectionPointName: row.collection_point_name || null,
+    collectionPoint: row.collection_point_id
+      ? {
+          name: row.collection_point_name || null,
+          address: row.collection_point_address || null,
+          latitude: toCoord(row.collection_point_latitude),
+          longitude: toCoord(row.collection_point_longitude),
+        }
+      : null,
     currentLeg: row.collection_point_id ? Number(row.current_leg || 1) : 1,
     fareAmount: Number(row.fare_amount || 0),
     payer: row.payer || "receiver",
     paymentMethod: row.payment_method || "unpaid",
     paymentStatus: row.payment_status || "pending",
+    packageSize: row.package_size || null,
+    notes: row.notes || null,
     // The handover PIN belongs to the receiver — they read it to the rider.
     deliveryPin: isReceiver && row.status !== "delivered" ? row.delivery_pin : null,
     riderName: row.rider_name || null,
+    riderPhone: row.rider_phone || null,
+    riderPlate: row.rider_plate || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -271,13 +293,19 @@ const CUSTOMER_DELIVERY_SELECT = `
   SELECT
     d.*,
     cp.name AS collection_point_name,
+    cp.address AS collection_point_address,
+    cp.latitude AS collection_point_latitude,
+    cp.longitude AS collection_point_longitude,
     sender.full_name AS sender_name,
-    rider.full_name AS rider_name
+    rider.full_name AS rider_name,
+    rider.phone AS rider_phone,
+    v.plate_number AS rider_plate
   FROM deliveries d
   LEFT JOIN collection_points cp ON cp.id = d.collection_point_id
   LEFT JOIN users sender ON sender.id = d.sender_id
   LEFT JOIN driver_profiles dp ON dp.id = d.driver_id
   LEFT JOIN users rider ON rider.id = dp.user_id
+  LEFT JOIN vehicles v ON v.id = dp.vehicle_id
 `;
 
 async function listMyDeliveries(req, res) {
@@ -369,10 +397,78 @@ async function getMyDelivery(req, res) {
   });
 }
 
+// A sender may cancel a booking that dispatch has not assigned yet.
+async function cancelDelivery(req, res) {
+  const deliveryId = Number(req.params.deliveryId);
+
+  if (!Number.isInteger(deliveryId) || deliveryId <= 0) {
+    return res.status(400).json({ message: "A valid delivery is required." });
+  }
+
+  const result = await pool.query(
+    `SELECT id, sender_id, status, driver_id FROM deliveries WHERE id = $1 LIMIT 1`,
+    [deliveryId]
+  );
+  const delivery = result.rows[0];
+
+  if (!delivery || delivery.sender_id !== req.user.userId) {
+    return res.status(404).json({ message: "Delivery not found." });
+  }
+
+  if (delivery.status !== "pending" || delivery.driver_id) {
+    return res.status(400).json({
+      message: "A rider is already on this delivery — it can no longer be cancelled.",
+    });
+  }
+
+  await pool.query(
+    `UPDATE deliveries SET status = 'cancelled', updated_at = NOW() WHERE id = $1`,
+    [deliveryId]
+  );
+
+  return res.json({
+    message: "Booking cancelled.",
+    delivery: await loadDeliveryForUser(deliveryId, req.user.userId),
+  });
+}
+
+// Customers update their own phone/email (mirrors the driver account flow).
+async function updateAccount(req, res) {
+  const phone = typeof req.body.phone === "string" ? req.body.phone.trim() : null;
+  const email = typeof req.body.email === "string" ? req.body.email.trim() : null;
+
+  if (phone && phone.length < 7) {
+    return res.status(400).json({ message: "Enter a valid phone number." });
+  }
+
+  try {
+    const result = await pool.query(
+      `
+        UPDATE users
+           SET phone = COALESCE($1, phone),
+               email = COALESCE($2, email),
+               updated_at = NOW()
+         WHERE id = $3
+         RETURNING full_name, phone, email
+      `,
+      [phone || null, email || null, req.user.userId]
+    );
+
+    return res.json({ message: "Account updated.", account: result.rows[0] });
+  } catch (error) {
+    if (error.code === "23505") {
+      return res.status(409).json({ message: "That phone or email is already in use." });
+    }
+    throw error;
+  }
+}
+
 module.exports = {
   quoteFare,
   listActiveCollectionPoints,
   bookDelivery,
+  cancelDelivery,
+  updateAccount,
   listMyDeliveries,
   getMyDelivery,
 };
