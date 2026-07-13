@@ -19,6 +19,22 @@ Completed:
 - Driver delivery status updates
 - Dashboard auto-refresh
 
+## Owner feature set (July 2026)
+
+- Additive DB migration scaffolding (`npm run db:migrate`, auto-runs at boot)
+- Roles: admin, rider (driver), customer — one Flutter app, role-aware login
+- Customer signup + booking (fare quote, receiver by phone, payer choice)
+- Collection points: real entity, two-leg routing (rider → point → rider),
+  admin dispatch of leg 2 (same or different rider)
+- Payments real-ready on Safaricom Daraja: STK Push + Paybill C2B with
+  tracking-code account matching; SIMULATE mode until owner adds credentials
+  (see `docs/NEEDS_FROM_OWNER.md`); cash still supported; payments ledger table
+- Rider self-registration with document checklist (licence, insurance, plates,
+  good conduct, national ID + NTSA/PSV/inspection), pending until admin
+  approves on the dashboard (per-document verify/reject)
+- Admin reports with CSV export: trips per rider, amount collected, rider
+  locations, customer senders/receivers (incl. place of birth/residence)
+
 ## Test Accounts
 
 Admin:

@@ -15,8 +15,18 @@ Stan is a logistics / fleet-tracking system with three parts:
 - Style: premium logistics app, deep navy blue (not black)
 
 ## Test accounts (demo)
-- Driver: `0711111111` / `driver123`
-- Admin:  system admin account
+- Driver:   `0711111111` / `driver123`
+- Customer: `0722222222` / `customer123`
+- Admin:    system admin account
+
+## Roles & flow
+- Roles: admin (dashboard), rider/driver (app), customer (same app, role-aware
+  login; can be sender or receiver on a delivery).
+- A delivery may route through a **collection point** in two rider legs
+  (sender → point → receiver); leg 2 is dispatched from the dashboard and may
+  be the same or a different rider. Direct deliveries still work unchanged.
+- Riders self-register with a document checklist and stay **pending** until an
+  admin approves them on the dashboard.
 
 ## API base URL
 - Android emulator: `http://10.0.2.2:5000`

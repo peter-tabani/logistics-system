@@ -6,28 +6,47 @@ demo-prep build is done and validated.
 
 ---
 
-## 0a. Real payments (M-Pesa / Daraja)  ·  BLOCKER before charging real money
+## 0a. Real payments (M-Pesa / Daraja)  ·  code is REAL-READY, needs your credentials
 
-All payments in Stan are currently **DEMO / MOCK** — the wallet, driver
-cash-out, and customer payment collection (Cash + M-Pesa) simulate the flows but
-move **no real money**. The M-Pesa STK push is faked in the app. To make
-payments real you must provide / set up:
+The Daraja integration is now **built** (`backend/src/services/daraja.js`):
+M-Pesa **STK Push** (primary) and **Paybill C2B** (fallback — customers pay
+your Paybill with the delivery tracking code as the account number, and it
+auto-matches). Who pays is chosen per delivery: **sender pays at booking** or
+**receiver pays on delivery**; cash is still supported. Until you provide
+credentials everything runs in **SIMULATE mode**: no Safaricom calls, no real
+money, flows labelled "DEMO" in the app.
 
-- **Safaricom Daraja account** (https://developer.safaricom.co.ke) with:
+**What I need from you to go real (sandbox first):**
+
+- A **Safaricom Daraja account** (https://developer.safaricom.co.ke) with:
   - Consumer **Key** and **Secret** (sandbox first, then production)
-  - **Business Short Code** (Paybill/Till) + **Passkey** for Lipa na M-Pesa Online (STK push)
-  - A registered, HTTPS **callback URL** Safaricom can reach (the backend must be
-    publicly hosted with TLS — localhost won't work)
-- **Go-Live approval** from Safaricom (production access requires their review).
-- A **settlement/float** arrangement and KYC for the paybill.
-- Decisions only you can make: the **Stan service-fee %** (demo uses 15%), who
-  bears transaction costs, refund/dispute handling, and payout schedule.
+  - **Business Short Code** (Paybill/Till) + **Passkey** for Lipa na M-Pesa Online
+- A **public HTTPS backend URL** Safaricom can call back (your Render URL works;
+  localhost won't).
+- For production later: Safaricom **Go-Live approval**, paybill KYC, and a
+  settlement/float arrangement.
 
-What I'd build once the above exists: replace the simulated
-`collect-payment` / `mpesa-result` / `wallet/cashout` with real Daraja STK-push
-+ B2C calls, store credentials in `.env` (never committed), and verify
-Safaricom callbacks. I will **not** add real payment credentials or move real
-money without an explicit task + your live Daraja details.
+**Where it goes** (never committed — `.env` on the server only):
+
+```
+MPESA_ENV=sandbox            # then production after go-live
+MPESA_CONSUMER_KEY=...
+MPESA_CONSUMER_SECRET=...
+MPESA_SHORTCODE=...
+MPESA_PASSKEY=...
+MPESA_CALLBACK_BASE_URL=https://<your-backend-host>
+```
+
+Then restart the backend and (once, as admin) call
+`POST /payments/mpesa/register-c2b` so Paybill payments reach the
+confirmation callback. `GET /payments/config` shows which mode is active.
+
+**Decisions still yours:** the Stan service-fee % (currently 15% in
+`backend/src/services/wallet.js`), the fare tariff (`FARE_BASE_KSH` /
+`FARE_PER_KM_KSH` in `.env`, currently 150 + 40/km), who bears transaction
+costs, refunds/disputes, and the payout schedule. Driver **cash-out to
+M-Pesa is still simulated** — a real payout needs Daraja **B2C** (a separate
+product with its own approval), which I'll build when you have it.
 
 ---
 

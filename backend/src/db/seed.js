@@ -43,6 +43,14 @@ async function seed() {
     role: "driver",
   });
 
+  await upsertUser({
+    fullName: "Demo Customer",
+    phone: "0722222222",
+    email: "customer@example.com",
+    password: "customer123",
+    role: "customer",
+  });
+
   const vehicleResult = await pool.query(
     `
       INSERT INTO vehicles (plate_number, vehicle_type)
@@ -71,6 +79,7 @@ async function seed() {
   console.log("Seed data created successfully.");
   console.log("Admin login: 0700000000 / admin123");
   console.log("Driver login: 0711111111 / driver123");
+  console.log("Customer login: 0722222222 / customer123");
 }
 
 seed().catch(async (error) => {
