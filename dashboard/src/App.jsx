@@ -56,6 +56,11 @@ function App() {
   const [cpLatitude, setCpLatitude] = useState('-1.283300')
   const [cpLongitude, setCpLongitude] = useState('36.816700')
   const [leg2Selections, setLeg2Selections] = useState({})
+  const [reportType, setReportType] = useState('trips')
+  const [reportFrom, setReportFrom] = useState('')
+  const [reportTo, setReportTo] = useState('')
+  const [reportData, setReportData] = useState(null)
+  const [isLoadingReport, setIsLoadingReport] = useState(false)
   const [message, setMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [autoRefresh, setAutoRefresh] = useState(true)
@@ -442,6 +447,68 @@ function App() {
     } catch (error) {
       setMessage(error.message)
     }
+  }
+
+  const REPORTS = {
+    trips: { label: 'Trips per rider', path: '/admin/reports/trips-per-rider' },
+    collections: { label: 'Amount collected', path: '/admin/reports/collections' },
+    locations: { label: 'Rider locations', path: '/admin/reports/rider-locations' },
+    senders: { label: 'Customers — senders', path: '/admin/reports/customers?role=sender' },
+    receivers: { label: 'Customers — receivers', path: '/admin/reports/customers?role=receiver' },
+  }
+
+  async function runReport(type = reportType) {
+    setIsLoadingReport(true)
+    setReportType(type)
+
+    try {
+      const report = REPORTS[type]
+      const params = new URLSearchParams()
+      if (reportFrom) params.set('from', reportFrom)
+      if (reportTo) params.set('to', reportTo)
+      const separator = report.path.includes('?') ? '&' : '?'
+      const suffix = params.toString() ? `${separator}${params.toString()}` : ''
+
+      const response = await fetch(`${API_BASE_URL}${report.path}${suffix}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Could not run the report.')
+      }
+
+      setReportData(data)
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setIsLoadingReport(false)
+    }
+  }
+
+  function exportReportCsv() {
+    const rows = reportData?.rows
+    if (!rows || !rows.length) {
+      setMessage('Run a report with data first.')
+      return
+    }
+
+    const headers = Object.keys(rows[0])
+    const escapeCell = (value) => {
+      const text = value === null || value === undefined ? '' : String(value)
+      return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
+    }
+    const csv = [
+      headers.join(','),
+      ...rows.map((row) => headers.map((key) => escapeCell(row[key])).join(',')),
+    ].join('\n')
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `stan-report-${reportType}-${new Date().toISOString().slice(0, 10)}.csv`
+    link.click()
+    URL.revokeObjectURL(link.href)
   }
 
   if (!token) {
@@ -1060,6 +1127,99 @@ function App() {
               </article>
             )}
           </div>
+        </div>
+      </section>
+
+      <section className="dispatch-drawer riders-drawer">
+        <div className="trip-board">
+          <div className="section-title trip-title">
+            <div>
+              <strong>Reports</strong>
+              <span>Trips per rider, collections, rider locations, senders, receivers</span>
+            </div>
+            <span>{reportData?.rows ? `${reportData.rows.length} rows` : 'No report yet'}</span>
+          </div>
+
+          <div className="report-controls">
+            {Object.entries(REPORTS).map(([key, report]) => (
+              <button
+                className={`report-tab ${reportType === key ? 'active' : ''}`}
+                key={key}
+                type="button"
+                onClick={() => runReport(key)}
+              >
+                {report.label}
+              </button>
+            ))}
+            <input
+              type="date"
+              value={reportFrom}
+              onChange={(event) => setReportFrom(event.target.value)}
+            />
+            <input
+              type="date"
+              value={reportTo}
+              onChange={(event) => setReportTo(event.target.value)}
+            />
+            <button
+              disabled={isLoadingReport}
+              type="button"
+              onClick={() => runReport()}
+            >
+              {isLoadingReport ? 'Running…' : 'Run'}
+            </button>
+            <button type="button" onClick={exportReportCsv}>
+              Export CSV
+            </button>
+          </div>
+
+          {reportType === 'collections' && reportData?.byMethod ? (
+            <div className="report-summary">
+              <span className="pin-chip">Total {formatKsh(reportData.grandTotal)} · {reportData.paymentCount} payments</span>
+              {reportData.byMethod.map((entry) => (
+                <span className="code-chip" key={entry.method}>
+                  {entry.method}: {formatKsh(entry.total)} ({entry.count})
+                </span>
+              ))}
+              {reportData.byPayer?.map((entry) => (
+                <span className="pay-chip paid" key={entry.payer}>
+                  {entry.payer} pays: {formatKsh(entry.total)}
+                </span>
+              ))}
+            </div>
+          ) : null}
+
+          {reportData?.rows?.length ? (
+            <div className="report-table-wrap">
+              <table className="report-table">
+                <thead>
+                  <tr>
+                    {Object.keys(reportData.rows[0]).map((key) => (
+                      <th key={key}>{key.replace(/([A-Z])/g, ' $1')}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {reportData.rows.map((row, index) => (
+                    <tr key={index}>
+                      {Object.keys(reportData.rows[0]).map((key) => (
+                        <td key={key}>
+                          {row[key] === null || row[key] === undefined ? '—' : String(row[key])}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <article className="trip-row empty">
+              <div>
+                <strong>{isLoadingReport ? 'Running report…' : 'No data'}</strong>
+                <span>Pick a report above; leave dates empty for the last 30 days.</span>
+              </div>
+            </article>
+          )}
         </div>
       </section>
 

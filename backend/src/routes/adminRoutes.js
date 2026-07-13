@@ -3,6 +3,7 @@ const express = require("express");
 const adminController = require("../controllers/adminController");
 const collectionPoints = require("../controllers/collectionPointsController");
 const ridersAdmin = require("../controllers/ridersAdminController");
+const reports = require("../controllers/reportsController");
 const { authenticate, requireRole } = require("../middleware/authMiddleware");
 
 const router = express.Router();
@@ -45,5 +46,11 @@ router.patch(
   requireRole("admin"),
   ridersAdmin.setDocumentStatus
 );
+
+// Reports
+router.get("/reports/trips-per-rider", authenticate, requireRole("admin"), reports.tripsPerRider);
+router.get("/reports/collections", authenticate, requireRole("admin"), reports.collections);
+router.get("/reports/rider-locations", authenticate, requireRole("admin"), reports.riderLocations);
+router.get("/reports/customers", authenticate, requireRole("admin"), reports.customers);
 
 module.exports = router;
