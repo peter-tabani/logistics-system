@@ -47,6 +47,9 @@ function App() {
   const [receiverName, setReceiverName] = useState('')
   const [receiverPhone, setReceiverPhone] = useState('')
   const [collectionPoints, setCollectionPoints] = useState([])
+  const [riders, setRiders] = useState([])
+  const [expandedRiderId, setExpandedRiderId] = useState(null)
+  const [riderDetail, setRiderDetail] = useState(null)
   const [selectedCollectionPointId, setSelectedCollectionPointId] = useState('')
   const [cpName, setCpName] = useState('')
   const [cpAddress, setCpAddress] = useState('')
@@ -96,7 +99,7 @@ function App() {
     }
 
     try {
-      const [driversResponse, deliveriesResponse, alertsResponse, eventsResponse, pointsResponse] = await Promise.all([
+      const [driversResponse, deliveriesResponse, alertsResponse, eventsResponse, pointsResponse, ridersResponse] = await Promise.all([
         fetch(`${API_BASE_URL}/admin/driver-locations`, {
           headers: { Authorization: `Bearer ${authToken}` },
         }),
@@ -112,6 +115,9 @@ function App() {
         fetch(`${API_BASE_URL}/admin/collection-points`, {
           headers: { Authorization: `Bearer ${authToken}` },
         }),
+        fetch(`${API_BASE_URL}/admin/riders`, {
+          headers: { Authorization: `Bearer ${authToken}` },
+        }),
       ])
 
       const driversData = await driversResponse.json()
@@ -119,6 +125,7 @@ function App() {
       const alertsData = await alertsResponse.json()
       const eventsData = await eventsResponse.json()
       const pointsData = pointsResponse.ok ? await pointsResponse.json() : { collectionPoints: [] }
+      const ridersData = ridersResponse.ok ? await ridersResponse.json() : { riders: [] }
 
       if (!driversResponse.ok) {
         throw new Error(driversData.message || 'Could not load drivers.')
@@ -142,6 +149,7 @@ function App() {
       setTrackingEvents(eventsData.events)
       setTrackingSummary(alertsData.summary)
       setCollectionPoints(pointsData.collectionPoints || [])
+      setRiders(ridersData.riders || [])
       notifyNewAlerts(alertsData.alerts)
 
       if (!selectedDriverId && driversData.drivers[0]) {
@@ -349,6 +357,92 @@ function App() {
 
   const dispatchLeg2 = (deliveryId) => postRiderAction(deliveryId, 'dispatch-leg2', 'Could not dispatch leg 2.')
   const assignRider = (deliveryId) => postRiderAction(deliveryId, 'assign', 'Could not assign a rider.')
+
+  async function toggleRiderDetail(driverId) {
+    if (expandedRiderId === driverId) {
+      setExpandedRiderId(null)
+      setRiderDetail(null)
+      return
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/riders/${driverId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Could not load the rider.')
+      }
+
+      setExpandedRiderId(driverId)
+      setRiderDetail(data)
+    } catch (error) {
+      setMessage(error.message)
+    }
+  }
+
+  async function setRiderApproval(driverId, status) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/riders/${driverId}/approval`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ status }),
+      })
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Could not update the rider.')
+      }
+
+      setMessage(data.message)
+      await loadDashboardData(token, { silent: true })
+      if (expandedRiderId === driverId) {
+        setExpandedRiderId(null)
+        setRiderDetail(null)
+      }
+    } catch (error) {
+      setMessage(error.message)
+    }
+  }
+
+  async function setDocumentStatus(driverId, docType, status) {
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/admin/riders/${driverId}/documents/${docType}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ status }),
+        },
+      )
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Could not update the document.')
+      }
+
+      setRiderDetail((prev) =>
+        prev
+          ? {
+              ...prev,
+              documents: prev.documents.map((doc) =>
+                doc.docType === docType ? { ...doc, ...data.document } : doc,
+              ),
+            }
+          : prev,
+      )
+      await loadDashboardData(token, { silent: true })
+    } catch (error) {
+      setMessage(error.message)
+    }
+  }
 
   if (!token) {
     return (
@@ -860,6 +954,108 @@ function App() {
                 <div>
                   <strong>No collection points yet</strong>
                   <span>Add the first hub to enable two-leg routing.</span>
+                </div>
+              </article>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="dispatch-drawer riders-drawer">
+        <div className="trip-board">
+          <div className="section-title trip-title">
+            <div>
+              <strong>Riders</strong>
+              <span>Self-registered riders wait here for document review and approval</span>
+            </div>
+            <span>
+              {riders.filter((rider) => rider.approvalStatus === 'pending').length} pending ·{' '}
+              {riders.length} total
+            </span>
+          </div>
+          <div className="trip-list">
+            {riders.length ? (
+              riders.map((rider) => (
+                <article className="trip-row rider-row-card" key={rider.driverId}>
+                  <div>
+                    <strong>{rider.fullName}</strong>
+                    <span>
+                      {rider.phone}
+                      {rider.plateNumber ? ` · ${rider.plateNumber}` : ''}
+                      {rider.vehicleType ? ` (${rider.vehicleType})` : ''}
+                    </span>
+                    <div className="trip-meta">
+                      <span className={`status-pill approval-${rider.approvalStatus}`}>
+                        {rider.approvalStatus}
+                      </span>
+                      <span className="pin-chip">
+                        Docs {rider.documents.verified}/{rider.documents.total} verified
+                      </span>
+                      {rider.documents.pending > 0 ? (
+                        <span className="pay-chip pending">{rider.documents.pending} to review</span>
+                      ) : null}
+                    </div>
+                    {expandedRiderId === rider.driverId && riderDetail ? (
+                      <div className="rider-detail">
+                        <p>
+                          Born: {riderDetail.rider.placeOfBirth || '—'} · Lives:{' '}
+                          {riderDetail.rider.placeOfResidence || '—'}
+                          {riderDetail.rider.email ? ` · ${riderDetail.rider.email}` : ''}
+                        </p>
+                        {riderDetail.documents.map((doc) => (
+                          <div className="doc-row" key={doc.docType}>
+                            <span className="doc-name">{doc.docType.replaceAll('_', ' ')}</span>
+                            <span className="doc-number">{doc.docNumber || '—'}</span>
+                            <span className={`pay-chip ${doc.status === 'verified' ? 'paid' : doc.status === 'pending' ? 'pending' : 'failed'}`}>
+                              {doc.status}
+                            </span>
+                            {doc.status !== 'missing' ? (
+                              <span className="doc-actions">
+                                <button
+                                  type="button"
+                                  onClick={() => setDocumentStatus(rider.driverId, doc.docType, 'verified')}
+                                >
+                                  Verify
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDocumentStatus(rider.driverId, doc.docType, 'rejected')}
+                                >
+                                  Reject
+                                </button>
+                              </span>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="leg2-dispatch">
+                      <button type="button" onClick={() => toggleRiderDetail(rider.driverId)}>
+                        {expandedRiderId === rider.driverId ? 'Hide documents' : 'Review documents'}
+                      </button>
+                      {rider.approvalStatus !== 'approved' ? (
+                        <button type="button" onClick={() => setRiderApproval(rider.driverId, 'approved')}>
+                          Approve rider
+                        </button>
+                      ) : null}
+                      {rider.approvalStatus !== 'rejected' ? (
+                        <button
+                          className="danger-btn"
+                          type="button"
+                          onClick={() => setRiderApproval(rider.driverId, 'rejected')}
+                        >
+                          Reject
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </article>
+              ))
+            ) : (
+              <article className="trip-row empty">
+                <div>
+                  <strong>No riders yet</strong>
+                  <span>Riders who sign up in the app will appear here for approval.</span>
                 </div>
               </article>
             )}

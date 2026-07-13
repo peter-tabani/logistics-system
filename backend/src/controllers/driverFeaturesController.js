@@ -14,7 +14,18 @@ const {
   markPaymentFailed,
 } = require("./paymentsController");
 
-const DOCUMENT_TYPES = ["license", "ntsa", "psv", "insurance", "inspection"];
+// Owner's signup checklist (license, insurance, plates, good conduct,
+// national ID) plus the original compliance set (NTSA, PSV, inspection).
+const DOCUMENT_TYPES = [
+  "license",
+  "insurance",
+  "plates",
+  "good_conduct",
+  "national_id",
+  "ntsa",
+  "psv",
+  "inspection",
+];
 
 async function getDriverProfile(userId) {
   const result = await pool.query(
@@ -59,7 +70,7 @@ async function getProfile(req, res) {
     `
       SELECT
         u.full_name, u.phone, u.email, u.created_at AS member_since,
-        dp.status, dp.rating, dp.bio, dp.license_number,
+        dp.status, dp.rating, dp.bio, dp.license_number, dp.approval_status,
         v.plate_number, v.vehicle_type,
         (SELECT COUNT(*) FROM deliveries d
           WHERE d.driver_id = dp.id AND d.status = 'delivered') AS completed_trips,
@@ -82,6 +93,7 @@ async function getProfile(req, res) {
       phone: row.phone,
       email: row.email,
       memberSince: row.member_since,
+      approvalStatus: row.approval_status || "approved",
       availability: row.status,
       rating: toNumber(row.rating),
       bio: row.bio,
@@ -197,14 +209,14 @@ async function updateDocument(req, res) {
     return res.status(400).json({ message: "A document number is required." });
   }
 
-  // DEMO: submitting a document number auto-marks it verified.
+  // Submissions go to 'pending' — an admin verifies them on the dashboard.
   const result = await pool.query(
     `
       INSERT INTO driver_documents (driver_id, doc_type, doc_number, status, expiry_date, updated_at)
-      VALUES ($1, $2, $3, 'verified', $4, NOW())
+      VALUES ($1, $2, $3, 'pending', $4, NOW())
       ON CONFLICT (driver_id, doc_type)
       DO UPDATE SET doc_number = EXCLUDED.doc_number,
-                    status = 'verified',
+                    status = 'pending',
                     expiry_date = EXCLUDED.expiry_date,
                     updated_at = NOW()
       RETURNING doc_type, doc_number, status, expiry_date, updated_at
@@ -212,7 +224,10 @@ async function updateDocument(req, res) {
     [driver.id, docType, docNumber, expiryDate]
   );
 
-  return res.json({ message: "Document submitted (demo auto-verified).", document: result.rows[0] });
+  return res.json({
+    message: "Document submitted for verification.",
+    document: result.rows[0],
+  });
 }
 
 /* --------------------------- Wallet & earnings -------------------------- */

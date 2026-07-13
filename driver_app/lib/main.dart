@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'customer_home.dart';
+import 'rider_signup.dart';
 
 const String configuredApiBaseUrl = String.fromEnvironment('API_BASE_URL');
 // Default backend = the always-on Render deployment, so the app works from any
@@ -572,6 +573,18 @@ class _LoginScreenState extends State<LoginScreen> {
         final role = user['role'] as String?;
 
         if (role == 'driver') {
+          final approvalStatus = user['approvalStatus'] as String? ?? 'approved';
+          if (approvalStatus != 'approved') {
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(
+                builder: (_) => RiderPendingScreen(
+                  fullName: user['fullName'] as String,
+                  approvalStatus: approvalStatus,
+                ),
+              ),
+            );
+            return;
+          }
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(
               builder: (_) => DriverHomeScreen(
@@ -851,6 +864,22 @@ class _LoginScreenState extends State<LoginScreen> {
                           style: TextButton.styleFrom(foregroundColor: Colors.white),
                           child: const Text(
                             'New to Stan? Create a customer account',
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                      ),
+                      Center(
+                        child: TextButton(
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const RiderSignupScreen(),
+                              ),
+                            );
+                          },
+                          style: TextButton.styleFrom(foregroundColor: stanMuted),
+                          child: const Text(
+                            'Become a Stan rider',
                             style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
                           ),
                         ),
@@ -3530,7 +3559,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       for (final doc in _documents)
         doc['docType'] as String: doc['status'] as String? ?? 'missing',
     };
-    const order = ['license', 'ntsa', 'psv', 'insurance', 'inspection'];
+    const order = [
+      'license',
+      'insurance',
+      'plates',
+      'good_conduct',
+      'national_id',
+      'ntsa',
+      'psv',
+      'inspection',
+    ];
 
     final rows = <Widget>[];
     for (var i = 0; i < order.length; i++) {
@@ -5686,9 +5724,12 @@ class _WalletScreenState extends State<WalletScreen> {
 
 const Map<String, String> _docTitles = {
   'license': 'Driving licence',
+  'insurance': 'Insurance certificate',
+  'plates': 'Number plates',
+  'good_conduct': 'Certificate of Good Conduct',
+  'national_id': 'National ID',
   'ntsa': 'NTSA clearance',
   'psv': 'PSV badge',
-  'insurance': 'Insurance certificate',
   'inspection': 'Vehicle inspection',
 };
 

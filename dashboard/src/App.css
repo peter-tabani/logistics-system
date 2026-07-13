@@ -726,6 +726,80 @@ button:disabled {
   background: #fee2e2;
 }
 
+.riders-drawer {
+  grid-template-columns: 1fr;
+}
+
+.status-pill.approval-pending {
+  color: #92400e;
+  background: #fef3c7;
+}
+
+.status-pill.approval-approved {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.status-pill.approval-rejected {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
+.rider-detail {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.rider-detail p {
+  margin: 0 0 8px;
+  color: #475569;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.doc-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 12.5px;
+}
+
+.doc-row .doc-name {
+  min-width: 150px;
+  color: var(--stan-dark);
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.doc-row .doc-number {
+  flex: 1;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.doc-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.doc-actions button {
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 800;
+  background: #fff;
+  color: var(--stan-dark);
+  cursor: pointer;
+}
+
+.leg2-dispatch .danger-btn {
+  background: #b91c1c;
+}
+
 .toast-message,
 .message {
   position: fixed;
