@@ -15,6 +15,7 @@ import 'package:latlong2/latlong.dart';
 import 'customer_common.dart';
 import 'main.dart';
 import 'stan_map.dart';
+import 'stan_routes.dart';
 
 class BookParcelFlow extends StatefulWidget {
   const BookParcelFlow({super.key, required this.token});
@@ -47,6 +48,7 @@ class _BookParcelFlowState extends State<BookParcelFlow> {
   String? _packageSize = 'small';
 
   Map<String, dynamic>? _quote;
+  List<LatLng>? _reviewRoute;
   bool _isQuoting = false;
   bool _isLocating = false;
   bool _isBooking = false;
@@ -171,8 +173,31 @@ class _BookParcelFlowState extends State<BookParcelFlow> {
     setState(() {
       _errorMessage = null;
       _step = 3;
+      _reviewRoute = null;
     });
     _fetchQuote();
+    _fetchReviewRoute();
+  }
+
+  // Road-following route for the review preview (pickup -> [cp] -> dropoff).
+  Future<void> _fetchReviewRoute() async {
+    final pickup = _pickupPoint;
+    final dropoff = _dropoffPoint;
+    if (pickup == null || dropoff == null) return;
+
+    LatLng? cpLatLng;
+    final selected =
+        _collectionPoints.where((p) => p['id'] == _selectedCollectionPointId).toList();
+    if (selected.isNotEmpty) {
+      cpLatLng = LatLng(
+        (selected.first['latitude'] as num).toDouble(),
+        (selected.first['longitude'] as num).toDouble(),
+      );
+    }
+
+    final route = await fetchRoadRoute([pickup, ?cpLatLng, dropoff]);
+    if (!mounted || route == null) return;
+    setState(() => _reviewRoute = route);
   }
 
   Future<void> _fetchQuote() async {
@@ -304,7 +329,9 @@ class _BookParcelFlowState extends State<BookParcelFlow> {
           children: [
             for (var i = 0; i < 4; i++) ...[
               Expanded(
-                child: Container(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOut,
                   height: 5,
                   decoration: BoxDecoration(
                     color: i <= _step ? Colors.white : Colors.white24,
@@ -653,7 +680,7 @@ class _BookParcelFlowState extends State<BookParcelFlow> {
               initialCenter: pickup,
               interactive: false,
               fitPoints: routePoints,
-              polyline: routePoints,
+              polyline: _reviewRoute ?? routePoints,
               markers: [
                 StanMarker(id: 'pickup', point: pickup, kind: StanMarkerKind.pickup),
                 if (cpLatLng != null)

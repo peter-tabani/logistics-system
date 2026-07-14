@@ -101,11 +101,16 @@ class _StanMapState extends State<StanMap> {
   gmaps.GoogleMapController? _googleController;
   final fmap.MapController _osmController = fmap.MapController();
   late LatLng _center = widget.initialCenter;
+  bool _ready = false;
 
   @override
   void initState() {
     super.initState();
     widget.controller?._bind(this);
+    // OSM (flutter_map) renders on the first frame; reveal it right away.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!useGoogleMaps && mounted) setState(() => _ready = true);
+    });
   }
 
   @override
@@ -176,7 +181,31 @@ class _StanMapState extends State<StanMap> {
 
   @override
   Widget build(BuildContext context) {
-    return useGoogleMaps ? _buildGoogle() : _buildOsm();
+    return Stack(
+      children: [
+        Positioned.fill(child: useGoogleMaps ? _buildGoogle() : _buildOsm()),
+        // Soft loading veil until the map's first frame — hides the blank
+        // tile flash so the screen feels instant.
+        Positioned.fill(
+          child: IgnorePointer(
+            ignoring: _ready,
+            child: AnimatedOpacity(
+              opacity: _ready ? 0 : 1,
+              duration: const Duration(milliseconds: 400),
+              child: Container(
+                color: stanSurface,
+                alignment: Alignment.center,
+                child: const SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(strokeWidth: 2.5, color: stanDark),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildGoogle() {
@@ -220,6 +249,7 @@ class _StanMapState extends State<StanMap> {
       tiltGesturesEnabled: false,
       onMapCreated: (controller) {
         _googleController = controller;
+        if (mounted) setState(() => _ready = true);
         final fit = widget.fitPoints;
         if (fit != null && fit.length >= 2) {
           // The map needs a frame to size itself before a bounds fit sticks.

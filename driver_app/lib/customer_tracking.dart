@@ -15,6 +15,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'customer_common.dart';
 import 'main.dart';
 import 'stan_map.dart';
+import 'stan_routes.dart';
 
 class CustomerParcelScreen extends StatefulWidget {
   const CustomerParcelScreen({
@@ -41,6 +42,11 @@ class _CustomerParcelScreenState extends State<CustomerParcelScreen> {
   bool _didFitCamera = false;
   bool _isBusy = false;
   String? _errorMessage;
+
+  // Road-following route (pickup -> [collection point] -> dropoff), fetched
+  // once from Google Directions. Null until it arrives (straight line shown).
+  List<LatLng>? _roadRoute;
+  bool _fetchedRoute = false;
 
   static const _averageSpeedKmh = 22.0;
 
@@ -84,6 +90,7 @@ class _CustomerParcelScreenState extends State<CustomerParcelScreen> {
           _didFitCamera = true;
           WidgetsBinding.instance.addPostFrameCallback((_) => _fitCamera());
         }
+        unawaited(_ensureRoute());
         if (_isFinished) _pollTimer?.cancel();
       } else if (!silent) {
         setState(() => _errorMessage = 'Could not load this parcel.');
@@ -93,6 +100,18 @@ class _CustomerParcelScreenState extends State<CustomerParcelScreen> {
         setState(() => _errorMessage = 'Could not connect. Pull down to retry.');
       }
     }
+  }
+
+  // Fetch the road-following route once the parcel's coordinates are known.
+  Future<void> _ensureRoute() async {
+    if (_fetchedRoute) return;
+    final pickup = _pickupPoint;
+    final dropoff = _dropoffPoint;
+    if (pickup == null || dropoff == null) return;
+    _fetchedRoute = true;
+    final route = await fetchRoadRoute([pickup, ?_collectionPointLatLng, dropoff]);
+    if (!mounted || route == null) return;
+    setState(() => _roadRoute = route);
   }
 
   LatLng? _point(String latKey, String lngKey) {
@@ -275,7 +294,7 @@ class _CustomerParcelScreenState extends State<CustomerParcelScreen> {
       initialCenter: pickup ?? rider ?? defaultMapCenter,
       initialZoom: 13,
       fitPoints: routePoints.length >= 2 ? routePoints : null,
-      polyline: routePoints.length >= 2 ? routePoints : null,
+      polyline: _roadRoute ?? (routePoints.length >= 2 ? routePoints : null),
       polylineColor: stanDark,
       markers: [
         if (pickup != null)
