@@ -15,9 +15,11 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'customer_home.dart';
 import 'driver_live_map.dart';
+import 'notifications.dart';
 import 'rider_signup.dart';
 import 'stan_map.dart';
 import 'stan_routes.dart';
+import 'theme_controller.dart';
 
 const String configuredApiBaseUrl = String.fromEnvironment('API_BASE_URL');
 // Default backend = the always-on Render deployment, so the app works from any
@@ -230,6 +232,14 @@ void main() async {
     // Fall back to the compiled default.
   }
 
+  // Load the saved theme and prepare on-device notifications before first frame.
+  await StanTheme.instance.load();
+  try {
+    await NotificationService.instance.init();
+  } catch (_) {
+    // Notifications are non-critical; the app still runs without them.
+  }
+
   runApp(const MyApp());
 }
 
@@ -238,26 +248,18 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Stan',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: stanDark),
-        fontFamily: 'Roboto',
-        scaffoldBackgroundColor: stanSurface,
-        useMaterial3: true,
-        filledButtonTheme: FilledButtonThemeData(
-          style: FilledButton.styleFrom(
-            backgroundColor: stanDark,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 18),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(999),
-            ),
-          ),
-        ),
-      ),
-      home: const SplashScreen(),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: StanTheme.instance.mode,
+      builder: (context, mode, _) {
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          title: 'Stan',
+          theme: StanTheme.instance.lightTheme,
+          darkTheme: StanTheme.instance.darkTheme,
+          themeMode: mode,
+          home: const SplashScreen(),
+        );
+      },
     );
   }
 }
