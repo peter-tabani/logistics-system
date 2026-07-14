@@ -137,6 +137,30 @@ class NotificationService {
     }
   }
 
+  final Map<int, String> _lastStatus = {};
+  bool _statusPrimed = false;
+
+  /// Compares the latest delivery statuses against what we last saw and raises
+  /// a notification for any that changed. The first call only primes the map
+  /// (no notifications) so re-opening the app doesn't replay old updates.
+  Future<void> checkDeliveryUpdates(List<Map<String, dynamic>> deliveries) async {
+    final primed = _statusPrimed;
+    _statusPrimed = true;
+    for (final d in deliveries) {
+      final id = d['id'];
+      if (id is! int) continue;
+      final status = (d['status'] as String?) ?? '';
+      final prev = _lastStatus[id];
+      _lastStatus[id] = status;
+      if (!primed || prev == null || prev == status || status.isEmpty) continue;
+      final code = d['trackingCode'] as String? ?? 'Your parcel';
+      await push(
+        title: 'Delivery update',
+        body: '$code is now ${status.replaceAll('_', ' ')}.',
+      );
+    }
+  }
+
   Future<void> markAllRead() async {
     for (final n in items.value) {
       n.read = true;

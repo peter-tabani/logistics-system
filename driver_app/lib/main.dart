@@ -16,6 +16,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'customer_home.dart';
 import 'driver_live_map.dart';
 import 'notifications.dart';
+import 'permissions.dart';
 import 'rider_signup.dart';
 import 'stan_map.dart';
 import 'stan_routes.dart';
@@ -977,6 +978,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       });
     unawaited(_loadVehicleBitmap());
     unawaited(_initializeDriverHome());
+    unawaited(requestStartupPermissions());
   }
 
   Future<void> _initializeDriverHome() async {
@@ -1341,6 +1343,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             _selectedDeliveryId = null;
           }
         });
+
+        unawaited(NotificationService.instance.checkDeliveryUpdates(loadedDeliveries));
 
         final hasActiveDelivery = loadedDeliveries.any(
           (delivery) => delivery['status'] != 'delivered',
@@ -2696,31 +2700,55 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   Widget _buildNotificationBell(int count) {
-    return Container(
-      width: 46,
-      height: 46,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.08),
-        shape: BoxShape.circle,
-      ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          const Icon(Icons.notifications_none, color: Colors.white, size: 22),
-          Positioned(
-            right: 11,
-            top: 10,
-            child: Container(
-              width: 9,
-              height: 9,
-              decoration: BoxDecoration(
-                color: count > 0 ? const Color(0xFFEAF264) : stanMuted,
-                shape: BoxShape.circle,
-                border: Border.all(color: stanDark, width: 1.5),
-              ),
-            ),
-          ),
-        ],
+    return GestureDetector(
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+        );
+      },
+      child: Container(
+        width: 46,
+        height: 46,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.08),
+          shape: BoxShape.circle,
+        ),
+        child: ValueListenableBuilder<List<AppNotification>>(
+          valueListenable: NotificationService.instance.items,
+          builder: (context, _, _) {
+            final unread = NotificationService.instance.unreadCount;
+            return Stack(
+              alignment: Alignment.center,
+              children: [
+                const Icon(Icons.notifications_none, color: Colors.white, size: 22),
+                if (unread > 0)
+                  Positioned(
+                    right: 9,
+                    top: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEAF264),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: stanDark, width: 1.5),
+                      ),
+                      child: Text(
+                        unread > 9 ? '9+' : '$unread',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: stanDark,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                          height: 1.1,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -3548,8 +3576,48 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           const SizedBox(height: 16),
           _buildDocumentsCard(),
           const SizedBox(height: 16),
+          _buildAppearanceCard(),
+          const SizedBox(height: 16),
           _buildAccountList(),
           const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  // Appearance: dark / light toggle (persisted via StanTheme).
+  Widget _buildAppearanceCard() {
+    final palette = StanTheme.instance.palette(context);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: palette.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: palette.border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: stanDark.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: const Icon(Icons.brightness_6_outlined, color: stanDark, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Appearance',
+              style: TextStyle(
+                color: palette.textStrong,
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const ThemeModeToggle(),
         ],
       ),
     );

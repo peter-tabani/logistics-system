@@ -17,7 +17,10 @@ import 'customer_booking.dart';
 import 'customer_common.dart';
 import 'customer_tracking.dart';
 import 'main.dart';
+import 'notifications.dart';
+import 'permissions.dart';
 import 'stan_map.dart';
+import 'theme_controller.dart';
 
 const String stanSupportPhone = '0700000000';
 
@@ -264,6 +267,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     super.initState();
     _loadDeliveries();
     _locateHome();
+    unawaited(requestStartupPermissions());
   }
 
   // Center the home map on the customer's live location (Uber/Bolt style).
@@ -307,11 +311,13 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final loaded =
+            (data['deliveries'] as List<dynamic>).cast<Map<String, dynamic>>();
         setState(() {
-          _deliveries =
-              (data['deliveries'] as List<dynamic>).cast<Map<String, dynamic>>();
+          _deliveries = loaded;
           _statusMessage = null;
         });
+        unawaited(NotificationService.instance.checkDeliveryUpdates(loaded));
       } else {
         setState(() => _statusMessage = 'Could not load your parcels.');
       }
@@ -426,14 +432,66 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                 ],
               ),
             ),
-            if (_isLoadingDeliveries)
+            if (_isLoadingDeliveries) ...[
               const SizedBox(
                 width: 18,
                 height: 18,
                 child: CircularProgressIndicator(strokeWidth: 2, color: stanDark),
               ),
+              const SizedBox(width: 8),
+            ],
+            _buildCustomerBell(),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildCustomerBell() {
+    return GestureDetector(
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+      ),
+      child: ValueListenableBuilder<List<AppNotification>>(
+        valueListenable: NotificationService.instance.items,
+        builder: (context, _, _) {
+          final unread = NotificationService.instance.unreadCount;
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: const BoxDecoration(color: stanSurface, shape: BoxShape.circle),
+                child: const Icon(Icons.notifications_none, color: stanDark, size: 20),
+              ),
+              if (unread > 0)
+                Positioned(
+                  right: -1,
+                  top: -1,
+                  child: Container(
+                    constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDC2626),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                    child: Text(
+                      unread > 9 ? '9+' : '$unread',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                        height: 1.1,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -1208,6 +1266,38 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
           ),
         ),
         const SizedBox(height: 18),
+        Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(9),
+                decoration: BoxDecoration(
+                  color: stanSurface,
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: const Icon(Icons.brightness_6_outlined, color: stanDark, size: 20),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Appearance',
+                  style: TextStyle(
+                    color: stanDark,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+              const ThemeModeToggle(),
+            ],
+          ),
+        ),
         _profileTile(
           Icons.manage_accounts_outlined,
           'Edit account',
