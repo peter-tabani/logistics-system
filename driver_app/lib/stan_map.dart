@@ -73,6 +73,7 @@ class StanMap extends StatefulWidget {
     this.polylineColor = const Color(0xFF0E2140),
     this.myLocation = false,
     this.interactive = true,
+    this.lite = false,
     this.fitPoints,
     this.onCenterChanged,
     this.onTap,
@@ -86,6 +87,10 @@ class StanMap extends StatefulWidget {
   final Color polylineColor;
   final bool myLocation;
   final bool interactive;
+
+  /// Lite mode renders a lightweight static Google map — ideal for the small
+  /// embedded map previews inside cards (fast, low resource, no live GL).
+  final bool lite;
 
   /// When set (2+ points), the camera fits these on load instead of using
   /// [initialCenter]/[initialZoom]. Used by the route preview + tracking maps.
@@ -243,6 +248,7 @@ class _StanMapState extends State<StanMap> {
       zoomControlsEnabled: false,
       mapToolbarEnabled: false,
       compassEnabled: false,
+      liteModeEnabled: widget.lite,
       rotateGesturesEnabled: widget.interactive,
       scrollGesturesEnabled: widget.interactive,
       zoomGesturesEnabled: widget.interactive,

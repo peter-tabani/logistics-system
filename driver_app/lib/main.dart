@@ -17,6 +17,7 @@ import 'customer_home.dart';
 import 'driver_live_map.dart';
 import 'rider_signup.dart';
 import 'stan_map.dart';
+import 'stan_routes.dart';
 
 const String configuredApiBaseUrl = String.fromEnvironment('API_BASE_URL');
 // Default backend = the always-on Render deployment, so the app works from any
@@ -2562,7 +2563,33 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             left: 24,
             right: 24,
             bottom: 0,
-            child: _buildLiveMapPreview(),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _buildTransportCard(
+                    asset: 'assets/vehicles/bike.png',
+                    fallbackIcon: Icons.pedal_bike,
+                    label: 'Bike',
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: _buildTransportCard(
+                    asset: 'assets/vehicles/truck.png',
+                    fallbackIcon: Icons.local_shipping_outlined,
+                    label: 'Truck',
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: _buildTransportCard(
+                    asset: 'assets/vehicles/car.png',
+                    fallbackIcon: Icons.directions_car_outlined,
+                    label: 'Car',
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -2706,70 +2733,49 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     );
   }
 
-  // Always-on live map preview on the home screen. Shows the rider's live
-  // location the moment they open the app; tap to open the full live map.
-  Widget _buildLiveMapPreview() {
-    return GestureDetector(
-      onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => DriverLiveMapScreen(deliveries: _deliveries),
+  void _openLiveMap() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DriverLiveMapScreen(deliveries: _deliveries),
+      ),
+    );
+  }
+
+  Widget _buildTransportCard({
+    required String asset,
+    required IconData fallbackIcon,
+    required String label,
+  }) {
+    return Container(
+      height: 96,
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Image.asset(
+              asset,
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.high,
+              errorBuilder: (_, _, _) =>
+                  Icon(fallbackIcon, color: stanDark, size: 30),
+            ),
           ),
-        );
-      },
-      child: Container(
-        height: 104,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.28),
-              blurRadius: 20,
-              offset: const Offset(0, 10),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              color: stanDark,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
             ),
-          ],
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Non-interactive so the tap opens the full map instead of panning.
-            IgnorePointer(
-              child: StanMap(
-                initialCenter: _currentMapCenter,
-                initialZoom: _lastPosition == null ? 12 : 15,
-                myLocation: true,
-                interactive: false,
-              ),
-            ),
-            Positioned(
-              left: 12,
-              bottom: 12,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                decoration: BoxDecoration(
-                  color: stanDark.withValues(alpha: 0.9),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.my_location, color: Colors.white, size: 15),
-                    SizedBox(width: 6),
-                    Text(
-                      'Your live location · tap to open',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -2807,6 +2813,26 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     return 'TRK-${deliveryId.toString().padLeft(5, '0')}';
   }
 
+  // Cached road-following routes for the trip-card mini maps (per delivery),
+  // so the embedded map shows the real road path, not a straight line.
+  final Map<int, List<LatLng>> _cardRouteCache = {};
+  final Set<int> _cardRouteFetching = {};
+
+  void _ensureCardRoute(Map<String, dynamic> delivery) {
+    final id = delivery['id'] as int;
+    if (_cardRouteCache.containsKey(id) || _cardRouteFetching.contains(id)) return;
+    final pickup = _pickupPoint(delivery);
+    final dropoff = _dropoffPoint(delivery);
+    if (pickup == null || dropoff == null) return;
+    _cardRouteFetching.add(id);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final route = await fetchRoadRoute([pickup, dropoff]);
+      _cardRouteFetching.remove(id);
+      if (!mounted || route == null) return;
+      setState(() => _cardRouteCache[id] = route);
+    });
+  }
+
   Widget _buildInProgressCarousel(List<Map<String, dynamic>> activeDeliveries) {
     if (activeDeliveries.isEmpty) {
       return Padding(
@@ -2838,6 +2864,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final deliveryId = delivery['id'] as int;
     final status = delivery['status'] as String;
 
+    _ensureCardRoute(delivery);
+    final pickup = _pickupPoint(delivery);
+    final dropoff = _dropoffPoint(delivery);
+    final straight = <LatLng>[?pickup, ?dropoff];
+    final route =
+        _cardRouteCache[deliveryId] ?? (straight.length >= 2 ? straight : null);
+
     return InkWell(
       onTap: () {
         setState(() {
@@ -2845,112 +2878,239 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         });
         unawaited(_startTracking());
       },
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(color: const Color(0xFFE2E8F0)),
+          boxShadow: [
+            BoxShadow(
+              color: stanDark.withValues(alpha: 0.06),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Row(
                     children: [
-                      Text(
-                        delivery['customerName'] as String,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: stanDark,
-                          fontSize: 16,
+                      const Text(
+                        'Current Tracking',
+                        style: TextStyle(
+                          color: Color(0xFF94A3B8),
+                          fontSize: 11.5,
                           fontWeight: FontWeight.w800,
-                          letterSpacing: -0.2,
+                          letterSpacing: 0.2,
                         ),
                       ),
-                      const SizedBox(height: 3),
-                      Text(
-                        _trackingCode(deliveryId),
-                        style: const TextStyle(
-                          color: Color(0xFF64748B),
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.3,
-                        ),
-                      ),
+                      const Spacer(),
+                      _buildStatusPill(status),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _trackingCode(deliveryId),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: stanDark,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  _buildCardDetail(
+                    icon: Icons.location_on,
+                    iconColor: const Color(0xFFDC2626),
+                    label: 'Destination',
+                    value: delivery['dropoffAddress'] as String? ?? '—',
+                  ),
+                  const SizedBox(height: 12),
+                  _buildCardDetail(
+                    icon: Icons.radio_button_checked,
+                    iconColor: const Color(0xFF16A34A),
+                    label: 'Status',
+                    value: formatDeliveryStatus(status),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 14),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: SizedBox(
+                width: 118,
+                child: IgnorePointer(
+                  child: StanMap(
+                    initialCenter: pickup ?? dropoff ?? defaultMapCenter,
+                    initialZoom: 12,
+                    interactive: false,
+                    fitPoints: (route != null && route.length >= 2) ? route : null,
+                    polyline: route,
+                    polylineColor: const Color(0xFFF97316),
+                    markers: [
+                      if (pickup != null)
+                        StanMarker(id: 'p$deliveryId', point: pickup, kind: StanMarkerKind.pickup),
+                      if (dropoff != null)
+                        StanMarker(id: 'd$deliveryId', point: dropoff, kind: StanMarkerKind.dropoff),
                     ],
                   ),
                 ),
-                _buildStatusPill(status),
-              ],
+              ),
             ),
-            const SizedBox(height: 16),
-            _buildRouteConnector(delivery),
           ],
         ),
       ),
     );
   }
 
+  // A labelled detail row (icon chip + label + value) used inside trip cards.
+  Widget _buildCardDetail({
+    required IconData icon,
+    required Color iconColor,
+    required String label,
+    required String value,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: iconColor.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: iconColor, size: 18),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Color(0xFF94A3B8),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 1),
+              Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: stanDark,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildEmptyTrackingCard() {
-    return Container(
-      height: 150,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: stanDark,
-              borderRadius: BorderRadius.circular(12),
+    return InkWell(
+      onTap: _openLiveMap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        height: 158,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+          boxShadow: [
+            BoxShadow(
+              color: stanDark.withValues(alpha: 0.06),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
             ),
-            child: const Icon(
-              Icons.local_shipping_outlined,
-              color: Colors.white,
-              size: 26,
+          ],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 9,
+                        height: 9,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF16A34A),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 7),
+                      const Text(
+                        "You're online",
+                        style: TextStyle(
+                          color: Color(0xFF16A34A),
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'No active delivery',
+                    style: TextStyle(
+                      color: stanDark,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Tap to open your live map.',
+                    style: TextStyle(
+                      color: stanMuted,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 16),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  'No active delivery',
-                  style: TextStyle(
-                    color: stanDark,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
+            const SizedBox(width: 14),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: SizedBox(
+                width: 118,
+                child: IgnorePointer(
+                  child: StanMap(
+                    initialCenter: _currentMapCenter,
+                    initialZoom: _lastPosition == null ? 12 : 15,
+                    myLocation: true,
+                    interactive: false,
                   ),
                 ),
-                SizedBox(height: 4),
-                Text(
-                  'Dispatch will assign your next pickup. Pull down to refresh.',
-                  style: TextStyle(
-                    color: stanMuted,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    height: 1.4,
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
