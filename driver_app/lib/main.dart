@@ -14,7 +14,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'customer_home.dart';
+import 'driver_live_map.dart';
 import 'rider_signup.dart';
+import 'stan_map.dart';
 
 const String configuredApiBaseUrl = String.fromEnvironment('API_BASE_URL');
 // Default backend = the always-on Render deployment, so the app works from any
@@ -2560,33 +2562,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             left: 24,
             right: 24,
             bottom: 0,
-            child: Row(
-              children: [
-                Expanded(
-                  child: _buildTransportCard(
-                    asset: 'assets/vehicles/bike.png',
-                    fallbackIcon: Icons.pedal_bike,
-                    label: 'Bike',
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: _buildTransportCard(
-                    asset: 'assets/vehicles/truck.png',
-                    fallbackIcon: Icons.local_shipping_outlined,
-                    label: 'Truck',
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: _buildTransportCard(
-                    asset: 'assets/vehicles/car.png',
-                    fallbackIcon: Icons.directions_car_outlined,
-                    label: 'Car',
-                  ),
-                ),
-              ],
-            ),
+            child: _buildLiveMapPreview(),
           ),
         ],
       ),
@@ -2730,42 +2706,70 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     );
   }
 
-  Widget _buildTransportCard({
-    required String asset,
-    required IconData fallbackIcon,
-    required String label,
-  }) {
-    return Container(
-      height: 96,
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Expanded(
-            child: Image.asset(
-              asset,
-              fit: BoxFit.contain,
-              filterQuality: FilterQuality.high,
-              // Until real vehicle images are added, show a clean line icon.
-              errorBuilder: (_, _, _) =>
-                  Icon(fallbackIcon, color: stanDark, size: 30),
-            ),
+  // Always-on live map preview on the home screen. Shows the rider's live
+  // location the moment they open the app; tap to open the full live map.
+  Widget _buildLiveMapPreview() {
+    return GestureDetector(
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => DriverLiveMapScreen(deliveries: _deliveries),
           ),
-          const SizedBox(height: 6),
-          Text(
-            label,
-            style: const TextStyle(
-              color: stanDark,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
+        );
+      },
+      child: Container(
+        height: 104,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.28),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
             ),
-          ),
-        ],
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Non-interactive so the tap opens the full map instead of panning.
+            IgnorePointer(
+              child: StanMap(
+                initialCenter: _currentMapCenter,
+                initialZoom: _lastPosition == null ? 12 : 15,
+                myLocation: true,
+                interactive: false,
+              ),
+            ),
+            Positioned(
+              left: 12,
+              bottom: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                decoration: BoxDecoration(
+                  color: stanDark.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.my_location, color: Colors.white, size: 15),
+                    SizedBox(width: 6),
+                    Text(
+                      'Your live location · tap to open',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
