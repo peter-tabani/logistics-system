@@ -924,6 +924,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   int? _routeForDeliveryId;
   List<gmaps.LatLng> _googleRoutePoints = [];
   bool _isFetchingRoute = false;
+  // Drives the smooth fade-in of the full-screen delivery/tracking map.
+  bool _deliveryMapReady = false;
 
   // Smooth marker animation: glide between GPS pings + rotate to heading.
   late final AnimationController _markerAnim;
@@ -1777,7 +1779,21 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   Widget _buildMap() {
-    return useGoogleMaps ? _buildGoogleMap() : _buildOsmMap();
+    // Presentation only: the map fills the screen behind the workflow sheet
+    // (map-forward placement) and fades in once its first frame is ready so
+    // there's no blank-tile flash.
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        const ColoredBox(color: stanDark),
+        AnimatedOpacity(
+          opacity: _deliveryMapReady ? 1 : 0,
+          duration: const Duration(milliseconds: 450),
+          curve: Curves.easeOut,
+          child: useGoogleMaps ? _buildGoogleMap() : _buildOsmMap(),
+        ),
+      ],
+    );
   }
 
   void _moveCamera(double latitude, double longitude, double zoom) {
@@ -2089,7 +2105,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       zoomControlsEnabled: false,
       mapToolbarEnabled: false,
       compassEnabled: false,
-      onMapCreated: (controller) => _googleMapController = controller,
+      onMapCreated: (controller) {
+        _googleMapController = controller;
+        if (mounted && !_deliveryMapReady) {
+          setState(() => _deliveryMapReady = true);
+        }
+      },
       onTap: (_) => unawaited(_showDriverLocationOnMap()),
     );
   }
@@ -2112,6 +2133,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         initialCenter: currentPoint,
         initialZoom: _lastPosition == null ? 12 : 15,
         onTap: (_, _) => unawaited(_showDriverLocationOnMap()),
+        onMapReady: () {
+          if (mounted && !_deliveryMapReady) {
+            setState(() => _deliveryMapReady = true);
+          }
+        },
       ),
       children: [
         TileLayer(
