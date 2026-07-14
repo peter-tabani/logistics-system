@@ -8,13 +8,13 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'customer_common.dart';
 import 'main.dart';
+import 'stan_map.dart';
 
 class CustomerParcelScreen extends StatefulWidget {
   const CustomerParcelScreen({
@@ -33,7 +33,7 @@ class CustomerParcelScreen extends StatefulWidget {
 }
 
 class _CustomerParcelScreenState extends State<CustomerParcelScreen> {
-  final MapController _mapController = MapController();
+  final StanMapController _mapController = StanMapController();
 
   Map<String, dynamic>? _delivery;
   Map<String, dynamic>? _riderLocation;
@@ -164,16 +164,10 @@ class _CustomerParcelScreenState extends State<CustomerParcelScreen> {
       ?_riderPoint,
     ];
     if (points.length < 2) return;
-    try {
-      _mapController.fitCamera(
-        CameraFit.bounds(
-          bounds: LatLngBounds.fromPoints(points),
-          padding: const EdgeInsets.fromLTRB(48, 110, 48, 330),
-        ),
-      );
-    } catch (_) {
-      // Map not ready yet; the next poll refit is unnecessary anyway.
-    }
+    _mapController.fitBounds(
+      points,
+      padding: const EdgeInsets.fromLTRB(48, 110, 48, 330),
+    );
   }
 
   Future<void> _callRider() async {
@@ -276,69 +270,22 @@ class _CustomerParcelScreenState extends State<CustomerParcelScreen> {
 
     final routePoints = [?pickup, ?cp, ?dropoff];
 
-    return FlutterMap(
-      mapController: _mapController,
-      options: MapOptions(
-        initialCenter: pickup ?? defaultMapCenter,
-        initialZoom: 13,
-      ),
-      children: [
-        TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.stan.driver_app',
-        ),
-        if (routePoints.length >= 2)
-          PolylineLayer(
-            polylines: [
-              Polyline(
-                points: routePoints,
-                color: stanDark.withValues(alpha: 0.7),
-                strokeWidth: 4.5,
-              ),
-            ],
-          ),
-        MarkerLayer(
-          markers: [
-            if (pickup != null)
-              Marker(
-                point: pickup,
-                width: 32,
-                height: 32,
-                child: const Icon(Icons.trip_origin, color: Color(0xFF16A34A), size: 26),
-              ),
-            if (cp != null)
-              Marker(
-                point: cp,
-                width: 32,
-                height: 32,
-                child: const Icon(Icons.hub, color: Color(0xFF6D28D9), size: 24),
-              ),
-            if (dropoff != null)
-              Marker(
-                point: dropoff,
-                width: 36,
-                height: 36,
-                child: const Icon(Icons.location_on, color: Color(0xFFDC2626), size: 32),
-              ),
-            if (rider != null)
-              Marker(
-                point: rider,
-                width: 46,
-                height: 46,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: stanDark,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 3),
-                    boxShadow: const [
-                      BoxShadow(color: Color(0x44000000), blurRadius: 8, offset: Offset(0, 3)),
-                    ],
-                  ),
-                  child: const Icon(Icons.local_shipping, color: Colors.white, size: 22),
-                ),
-              ),
-          ],
-        ),
+    return StanMap(
+      controller: _mapController,
+      initialCenter: pickup ?? rider ?? defaultMapCenter,
+      initialZoom: 13,
+      fitPoints: routePoints.length >= 2 ? routePoints : null,
+      polyline: routePoints.length >= 2 ? routePoints : null,
+      polylineColor: stanDark,
+      markers: [
+        if (pickup != null)
+          StanMarker(id: 'pickup', point: pickup, kind: StanMarkerKind.pickup),
+        if (cp != null)
+          StanMarker(id: 'cp', point: cp, kind: StanMarkerKind.collectionPoint),
+        if (dropoff != null)
+          StanMarker(id: 'dropoff', point: dropoff, kind: StanMarkerKind.dropoff),
+        if (rider != null)
+          StanMarker(id: 'rider', point: rider, kind: StanMarkerKind.rider),
       ],
     );
   }

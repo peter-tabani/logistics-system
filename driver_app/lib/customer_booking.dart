@@ -8,13 +8,13 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
 import 'customer_common.dart';
 import 'main.dart';
+import 'stan_map.dart';
 
 class BookParcelFlow extends StatefulWidget {
   const BookParcelFlow({super.key, required this.token});
@@ -28,8 +28,8 @@ class BookParcelFlow extends StatefulWidget {
 class _BookParcelFlowState extends State<BookParcelFlow> {
   int _step = 0;
 
-  final _pickupMapController = MapController();
-  final _dropoffMapController = MapController();
+  final _pickupMapController = StanMapController();
+  final _dropoffMapController = StanMapController();
   final _pickupAddressController = TextEditingController();
   final _dropoffAddressController = TextEditingController();
   final _receiverNameController = TextEditingController();
@@ -39,6 +39,7 @@ class _BookParcelFlowState extends State<BookParcelFlow> {
   LatLng _pickupInitial = defaultMapCenter;
   LatLng? _pickupPoint;
   LatLng? _dropoffPoint;
+  bool _hasLocation = false;
 
   List<Map<String, dynamic>> _collectionPoints = [];
   int? _selectedCollectionPointId;
@@ -114,12 +115,11 @@ class _BookParcelFlowState extends State<BookParcelFlow> {
 
       if (!mounted) return;
       final point = LatLng(position.latitude, position.longitude);
-      setState(() => _pickupInitial = point);
-      try {
-        _pickupMapController.move(point, 16);
-      } catch (_) {
-        // Map not built yet — _pickupInitial covers the initial camera.
-      }
+      setState(() {
+        _pickupInitial = point;
+        _hasLocation = true;
+      });
+      _pickupMapController.moveTo(point, zoom: 16);
     } catch (_) {
       if (!silent && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -136,16 +136,14 @@ class _BookParcelFlowState extends State<BookParcelFlow> {
       setState(() => _errorMessage = 'Describe the pickup place (building, street…).');
       return;
     }
-    _pickupPoint = _pickupMapController.camera.center;
+    _pickupPoint = _pickupMapController.center ?? _pickupInitial;
     setState(() {
       _errorMessage = null;
       _step = 1;
     });
     // Start the dropoff picker where the pickup pin landed.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      try {
-        _dropoffMapController.move(_pickupPoint!, 14);
-      } catch (_) {}
+      _dropoffMapController.moveTo(_pickupPoint!, zoom: 14);
     });
   }
 
@@ -154,7 +152,7 @@ class _BookParcelFlowState extends State<BookParcelFlow> {
       setState(() => _errorMessage = 'Describe the dropoff place (building, street…).');
       return;
     }
-    _dropoffPoint = _dropoffMapController.camera.center;
+    _dropoffPoint = _dropoffMapController.center ?? (_pickupPoint ?? _pickupInitial);
     setState(() {
       _errorMessage = null;
       _step = 2;
@@ -333,7 +331,7 @@ class _BookParcelFlowState extends State<BookParcelFlow> {
   }
 
   Widget _mapPicker({
-    required MapController controller,
+    required StanMapController controller,
     required LatLng initialCenter,
     required Color pinColor,
     required TextEditingController addressController,
@@ -356,15 +354,11 @@ class _BookParcelFlowState extends State<BookParcelFlow> {
             children: [
               ClipRRect(
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
-                child: FlutterMap(
-                  mapController: controller,
-                  options: MapOptions(initialCenter: initialCenter, initialZoom: 14),
-                  children: [
-                    TileLayer(
-                      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.stan.driver_app',
-                    ),
-                  ],
+                child: StanMap(
+                  controller: controller,
+                  initialCenter: initialCenter,
+                  initialZoom: 15,
+                  myLocation: _hasLocation,
                 ),
               ),
               // Fixed centre pin — move the map underneath it.
@@ -654,54 +648,18 @@ class _BookParcelFlowState extends State<BookParcelFlow> {
         ClipRRect(
           borderRadius: BorderRadius.circular(18),
           child: SizedBox(
-            height: 180,
-            child: IgnorePointer(
-              child: FlutterMap(
-                options: MapOptions(
-                  initialCameraFit: CameraFit.bounds(
-                    bounds: LatLngBounds.fromPoints(routePoints),
-                    padding: const EdgeInsets.all(36),
-                  ),
-                ),
-                children: [
-                  TileLayer(
-                    urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    userAgentPackageName: 'com.stan.driver_app',
-                  ),
-                  PolylineLayer(
-                    polylines: [
-                      Polyline(
-                        points: routePoints,
-                        color: stanDark.withValues(alpha: 0.75),
-                        strokeWidth: 4,
-                      ),
-                    ],
-                  ),
-                  MarkerLayer(
-                    markers: [
-                      Marker(
-                        point: pickup,
-                        width: 34,
-                        height: 34,
-                        child: const Icon(Icons.trip_origin, color: Color(0xFF16A34A), size: 26),
-                      ),
-                      if (cpLatLng != null)
-                        Marker(
-                          point: cpLatLng,
-                          width: 34,
-                          height: 34,
-                          child: const Icon(Icons.hub, color: Color(0xFF6D28D9), size: 24),
-                        ),
-                      Marker(
-                        point: dropoff,
-                        width: 34,
-                        height: 34,
-                        child: const Icon(Icons.location_on, color: Color(0xFFDC2626), size: 30),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+            height: 190,
+            child: StanMap(
+              initialCenter: pickup,
+              interactive: false,
+              fitPoints: routePoints,
+              polyline: routePoints,
+              markers: [
+                StanMarker(id: 'pickup', point: pickup, kind: StanMarkerKind.pickup),
+                if (cpLatLng != null)
+                  StanMarker(id: 'cp', point: cpLatLng, kind: StanMarkerKind.collectionPoint),
+                StanMarker(id: 'dropoff', point: dropoff, kind: StanMarkerKind.dropoff),
+              ],
             ),
           ),
         ),

@@ -8,13 +8,16 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
+import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'customer_booking.dart';
 import 'customer_common.dart';
 import 'customer_tracking.dart';
 import 'main.dart';
+import 'stan_map.dart';
 
 const String stanSupportPhone = '0700000000';
 
@@ -252,10 +255,41 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   String? _statusMessage;
   late String _phone = widget.phone;
 
+  final StanMapController _homeMapController = StanMapController();
+  LatLng _homeCenter = defaultMapCenter;
+  bool _hasLocation = false;
+
   @override
   void initState() {
     super.initState();
     _loadDeliveries();
+    _locateHome();
+  }
+
+  // Center the home map on the customer's live location (Uber/Bolt style).
+  Future<void> _locateHome() async {
+    try {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return;
+      }
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      );
+      if (!mounted) return;
+      final point = LatLng(position.latitude, position.longitude);
+      setState(() {
+        _homeCenter = point;
+        _hasLocation = true;
+      });
+      _homeMapController.moveTo(point, zoom: 15.5);
+    } catch (_) {
+      // Falls back to the default city center; map still shows.
+    }
   }
 
   Future<void> _loadDeliveries() async {
@@ -341,103 +375,65 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     return 'Good evening';
   }
 
-  Widget _buildHero() {
-    return Container(
-      padding: EdgeInsets.fromLTRB(20, MediaQuery.of(context).padding.top + 18, 20, 26),
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [stanDark, stanPanel],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+  // Floating greeting bar over the map (Uber/Bolt style).
+  Widget _buildHomeTopBar() {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, MediaQuery.of(context).padding.top + 12, 16, 0),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: const [
+            BoxShadow(color: Color(0x22000000), blurRadius: 14, offset: Offset(0, 4)),
+          ],
         ),
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '$_greeting,',
-                      style: const TextStyle(
-                        color: stanMuted,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    Text(
-                      widget.fullName.split(' ').first,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 24,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ],
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: stanDark,
+              child: Text(
+                widget.fullName.isNotEmpty ? widget.fullName[0].toUpperCase() : 'C',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 15,
                 ),
               ),
-              IconButton(
-                onPressed: _loadDeliveries,
-                icon: _isLoadingDeliveries
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Icon(Icons.refresh, color: Colors.white),
-              ),
-              CircleAvatar(
-                radius: 21,
-                backgroundColor: Colors.white,
-                child: Text(
-                  widget.fullName.isNotEmpty ? widget.fullName[0].toUpperCase() : 'C',
-                  style: const TextStyle(
-                    color: stanDark,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 17,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          // Primary CTA — the heart of the screen, like Uber's destination bar.
-          InkWell(
-            borderRadius: BorderRadius.circular(18),
-            onTap: _openBookingFlow,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(18),
-                boxShadow: const [
-                  BoxShadow(color: Color(0x33000000), blurRadius: 16, offset: Offset(0, 6)),
-                ],
-              ),
-              child: const Row(
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.search, color: stanDark),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Send a parcel — where to?',
-                      style: TextStyle(
-                        color: stanDark,
-                        fontSize: 15.5,
-                        fontWeight: FontWeight.w800,
-                      ),
+                  Text(
+                    '$_greeting,',
+                    style: const TextStyle(
+                      color: Color(0xFF64748B),
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                  Icon(Icons.arrow_forward_rounded, color: stanDark),
+                  Text(
+                    widget.fullName.split(' ').first,
+                    style: const TextStyle(
+                      color: stanDark,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
                 ],
               ),
             ),
-          ),
-        ],
+            if (_isLoadingDeliveries)
+              const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2, color: stanDark),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -582,135 +578,209 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
 
   Widget _buildHomeTab() {
     final active = _activeDeliveries;
-    final recent = _deliveries.take(3).toList();
+    final recent = _deliveries.take(4).toList();
 
-    return RefreshIndicator(
-      onRefresh: _loadDeliveries,
-      child: ListView(
-        padding: EdgeInsets.zero,
-        children: [
-          _buildHero(),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 26),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (active.isNotEmpty) ...[
-                  const Text(
-                    'In progress',
-                    style: TextStyle(color: stanDark, fontWeight: FontWeight.w900, fontSize: 16),
-                  ),
-                  const SizedBox(height: 10),
-                  _buildActiveParcelCard(active.first),
-                  if (active.length > 1) ...[
-                    const SizedBox(height: 8),
-                    TextButton(
-                      onPressed: () => setState(() => _tab = 1),
-                      child: Text(
-                        '+${active.length - 1} more active parcel${active.length > 2 ? 's' : ''}',
-                        style: const TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 16),
+    // Overlay the active parcel's route on the always-on home map.
+    final markers = <StanMarker>[];
+    List<LatLng>? routeLine;
+    if (active.isNotEmpty) {
+      final d = active.first;
+      final pLat = d['pickupLatitude'];
+      final pLng = d['pickupLongitude'];
+      final dLat = d['dropoffLatitude'];
+      final dLng = d['dropoffLongitude'];
+      if (pLat is num && pLng is num) {
+        markers.add(StanMarker(
+          id: 'home-pickup',
+          point: LatLng(pLat.toDouble(), pLng.toDouble()),
+          kind: StanMarkerKind.pickup,
+        ));
+      }
+      if (dLat is num && dLng is num) {
+        markers.add(StanMarker(
+          id: 'home-dropoff',
+          point: LatLng(dLat.toDouble(), dLng.toDouble()),
+          kind: StanMarkerKind.dropoff,
+        ));
+      }
+      if (markers.length == 2) routeLine = [markers.first.point, markers.last.point];
+    }
+
+    final screenHeight = MediaQuery.of(context).size.height;
+
+    return Stack(
+      children: [
+        // Persistent full-screen map — always visible behind the sheet.
+        Positioned.fill(
+          child: StanMap(
+            controller: _homeMapController,
+            initialCenter: _homeCenter,
+            initialZoom: _hasLocation ? 15.5 : 12,
+            // Only enable the live-location layer once permission is granted,
+            // so the native map never hits a permission-timing exception.
+            myLocation: _hasLocation,
+            markers: markers,
+            polyline: routeLine,
+          ),
+        ),
+        Align(alignment: Alignment.topCenter, child: _buildHomeTopBar()),
+        Positioned(
+          right: 16,
+          bottom: screenHeight * 0.46,
+          child: FloatingActionButton.small(
+            heroTag: 'home-locate',
+            backgroundColor: Colors.white,
+            foregroundColor: stanDark,
+            onPressed: _locateHome,
+            child: const Icon(Icons.my_location),
+          ),
+        ),
+        DraggableScrollableSheet(
+          initialChildSize: 0.44,
+          minChildSize: 0.28,
+          maxChildSize: 0.9,
+          builder: (sheetContext, scrollController) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: stanSurface,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+                boxShadow: [
+                  BoxShadow(color: Color(0x33000000), blurRadius: 20, offset: Offset(0, -4)),
                 ],
-                Row(
-                  children: [
-                    _quickAction(
-                      Icons.add_box_outlined,
-                      'Send a parcel',
-                      'Book a pickup on the map',
-                      _openBookingFlow,
-                    ),
-                    const SizedBox(width: 12),
-                    _quickAction(
-                      Icons.support_agent,
-                      'Support',
-                      'Call the Stan team',
-                      _callSupport,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                if (recent.isNotEmpty) ...[
-                  Row(
-                    children: [
-                      const Text(
-                        'Recent activity',
-                        style: TextStyle(
-                          color: stanDark,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 16,
-                        ),
+              ),
+              child: ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.fromLTRB(18, 10, 18, 24),
+                children: [
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 5,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFCBD5E1),
+                        borderRadius: BorderRadius.circular(999),
                       ),
-                      const Spacer(),
+                    ),
+                  ),
+                  // Uber-style "where to?" bar — the primary action.
+                  InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: _openBookingFlow,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                      decoration: BoxDecoration(
+                        color: stanDark,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.search, color: Colors.white),
+                          SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Send a parcel — where to?',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 15.5,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          Icon(Icons.arrow_forward_rounded, color: Colors.white),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  if (active.isNotEmpty) ...[
+                    const Text(
+                      'In progress',
+                      style: TextStyle(color: stanDark, fontWeight: FontWeight.w900, fontSize: 16),
+                    ),
+                    const SizedBox(height: 10),
+                    _buildActiveParcelCard(active.first),
+                    if (active.length > 1) ...[
+                      const SizedBox(height: 8),
                       TextButton(
                         onPressed: () => setState(() => _tab = 1),
-                        child: const Text('See all', style: TextStyle(fontWeight: FontWeight.w800)),
+                        child: Text(
+                          '+${active.length - 1} more active parcel${active.length > 2 ? 's' : ''}',
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                  ],
+                  Row(
+                    children: [
+                      _quickAction(
+                        Icons.add_box_outlined,
+                        'Send a parcel',
+                        'Book a pickup on the map',
+                        _openBookingFlow,
+                      ),
+                      const SizedBox(width: 12),
+                      _quickAction(
+                        Icons.support_agent,
+                        'Support',
+                        'Call the Stan team',
+                        _callSupport,
                       ),
                     ],
                   ),
-                  for (final delivery in recent) ...[
-                    _buildParcelCard(delivery, compact: true),
-                    const SizedBox(height: 10),
-                  ],
-                ] else if (!_isLoadingDeliveries) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: Row(
+                  const SizedBox(height: 20),
+                  if (recent.isNotEmpty) ...[
+                    Row(
                       children: [
-                        const Icon(Icons.inventory_2_outlined, color: stanMuted, size: 34),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Text(
-                            _statusMessage ??
-                                'No parcels yet. Book your first pickup — it takes under a minute.',
-                            style: const TextStyle(
-                              color: Color(0xFF60727A),
-                              fontWeight: FontWeight.w700,
-                              height: 1.4,
-                            ),
-                          ),
+                        const Text(
+                          'Recent activity',
+                          style: TextStyle(color: stanDark, fontWeight: FontWeight.w900, fontSize: 16),
+                        ),
+                        const Spacer(),
+                        TextButton(
+                          onPressed: () => setState(() => _tab = 1),
+                          child: const Text('See all', style: TextStyle(fontWeight: FontWeight.w800)),
                         ),
                       ],
                     ),
-                  ),
-                ],
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE0EAFB),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(Icons.hub_outlined, color: Color(0xFF1D4ED8), size: 28),
-                      SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Route via a Stan collection point and a rider handles each leg of the journey.',
-                          style: TextStyle(
-                            color: Color(0xFF1E3A8A),
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12.5,
-                            height: 1.4,
-                          ),
-                        ),
-                      ),
+                    for (final delivery in recent) ...[
+                      _buildParcelCard(delivery, compact: true),
+                      const SizedBox(height: 10),
                     ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+                  ] else if (!_isLoadingDeliveries) ...[
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.inventory_2_outlined, color: stanMuted, size: 34),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Text(
+                              _statusMessage ??
+                                  'No parcels yet. Tap "Send a parcel" to book your first pickup.',
+                              style: const TextStyle(
+                                color: Color(0xFF60727A),
+                                fontWeight: FontWeight.w700,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 
