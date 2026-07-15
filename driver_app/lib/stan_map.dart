@@ -10,6 +10,30 @@ import 'package:latlong2/latlong.dart';
 
 import 'main.dart';
 
+// Dark navy Google Maps style matching the Stan brand (deep navy land, darker
+// water, muted roads, transit/POI labels trimmed for a clean Uber/Bolt feel).
+const String stanDarkMapStyle = r'''
+[
+  {"elementType":"geometry","stylers":[{"color":"#0e2140"}]},
+  {"elementType":"labels.text.fill","stylers":[{"color":"#7f97bd"}]},
+  {"elementType":"labels.text.stroke","stylers":[{"color":"#0a1524"}]},
+  {"featureType":"administrative","elementType":"geometry","stylers":[{"visibility":"off"}]},
+  {"featureType":"poi","stylers":[{"visibility":"off"}]},
+  {"featureType":"poi.park","elementType":"geometry","stylers":[{"color":"#10352f"},{"visibility":"on"}]},
+  {"featureType":"road","elementType":"geometry","stylers":[{"color":"#17304f"}]},
+  {"featureType":"road","elementType":"geometry.stroke","stylers":[{"color":"#0a1524"}]},
+  {"featureType":"road.highway","elementType":"geometry","stylers":[{"color":"#274a76"}]},
+  {"featureType":"road","elementType":"labels.icon","stylers":[{"visibility":"off"}]},
+  {"featureType":"transit","stylers":[{"visibility":"off"}]},
+  {"featureType":"water","elementType":"geometry","stylers":[{"color":"#081120"}]}
+]
+''';
+
+// Dark raster tiles for the OpenStreetMap fallback so the themed map still
+// reads as navy when no Google key is present.
+const String _darkTileUrl = 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
+const String _lightTileUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+
 enum StanMarkerKind { pickup, dropoff, collectionPoint, rider }
 
 class StanMarker {
@@ -74,6 +98,7 @@ class StanMap extends StatefulWidget {
     this.myLocation = false,
     this.interactive = true,
     this.lite = false,
+    this.dark = false,
     this.fitPoints,
     this.onCenterChanged,
     this.onTap,
@@ -91,6 +116,9 @@ class StanMap extends StatefulWidget {
   /// Lite mode renders a lightweight static Google map — ideal for the small
   /// embedded map previews inside cards (fast, low resource, no live GL).
   final bool lite;
+
+  /// Applies the dark navy Stan map style (Google) / dark tiles (OSM).
+  final bool dark;
 
   /// When set (2+ points), the camera fits these on load instead of using
   /// [initialCenter]/[initialZoom]. Used by the route preview + tracking maps.
@@ -237,6 +265,7 @@ class _StanMapState extends State<StanMap> {
     }
 
     return gmaps.GoogleMap(
+      style: widget.dark ? stanDarkMapStyle : null,
       initialCameraPosition: gmaps.CameraPosition(
         target: gmaps.LatLng(widget.initialCenter.latitude, widget.initialCenter.longitude),
         zoom: widget.initialZoom,
@@ -287,7 +316,7 @@ class _StanMapState extends State<StanMap> {
       ),
       children: [
         fmap.TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          urlTemplate: widget.dark ? _darkTileUrl : _lightTileUrl,
           userAgentPackageName: 'com.example.driver_app',
         ),
         if (line != null && line.length >= 2)

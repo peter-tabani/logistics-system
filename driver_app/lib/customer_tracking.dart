@@ -294,8 +294,9 @@ class _CustomerParcelScreenState extends State<CustomerParcelScreen> {
       initialCenter: pickup ?? rider ?? defaultMapCenter,
       initialZoom: 13,
       fitPoints: routePoints.length >= 2 ? routePoints : null,
+      dark: true,
       polyline: _roadRoute ?? (routePoints.length >= 2 ? routePoints : null),
-      polylineColor: stanDark,
+      polylineColor: const Color(0xFF34D399),
       markers: [
         if (pickup != null)
           StanMarker(id: 'pickup', point: pickup, kind: StanMarkerKind.pickup),

@@ -411,6 +411,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
             const SizedBox(width: 12),
             Expanded(
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(

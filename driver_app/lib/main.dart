@@ -2101,6 +2101,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             : gmaps.LatLng(defaultMapCenter.latitude, defaultMapCenter.longitude));
 
     return gmaps.GoogleMap(
+      style: stanDarkMapStyle,
       initialCameraPosition: gmaps.CameraPosition(
         target: center,
         zoom: _lastPosition == null ? 12 : 15,
@@ -2147,7 +2148,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       ),
       children: [
         TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          urlTemplate: 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.example.driver_app',
         ),
         if (_lastPosition != null && nextTargetPoint != null)
@@ -2155,7 +2156,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             polylines: [
               Polyline(
                 points: [currentPoint, nextTargetPoint],
-                color: const Color(0xFF111827),
+                color: const Color(0xFFF97316),
                 strokeWidth: 5,
               ),
             ],
