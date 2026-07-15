@@ -1915,43 +1915,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     );
   }
 
-  // Decodes a Google "encoded polyline" string into map points.
-  List<gmaps.LatLng> _decodePolyline(String encoded) {
-    final points = <gmaps.LatLng>[];
-    var index = 0;
-    var lat = 0;
-    var lng = 0;
-
-    while (index < encoded.length) {
-      int shift = 0;
-      int result = 0;
-      int byte;
-      do {
-        byte = encoded.codeUnitAt(index++) - 63;
-        result |= (byte & 0x1f) << shift;
-        shift += 5;
-      } while (byte >= 0x20);
-      lat += (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
-
-      shift = 0;
-      result = 0;
-      do {
-        byte = encoded.codeUnitAt(index++) - 63;
-        result |= (byte & 0x1f) << shift;
-        shift += 5;
-      } while (byte >= 0x20);
-      lng += (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
-
-      points.add(gmaps.LatLng(lat / 1e5, lng / 1e5));
-    }
-
-    return points;
-  }
-
-  // Fetches a road-following route (pickup -> dropoff) from Google Directions.
-  // Cached per delivery so live GPS updates don't re-request it.
+  // Fetches a road-following route (pickup -> dropoff) via the shared helper
+  // (Google Directions, then keyless OSRM fallback) so the route still hugs
+  // the roads even if the Maps key rejects the Directions web call. Cached per
+  // delivery so live GPS updates don't re-request it.
   Future<void> _fetchGoogleRoute(Map<String, dynamic> delivery) async {
-    if (!useGoogleMaps || _isFetchingRoute) return;
+    if (_isFetchingRoute) return;
 
     final pickup = _pickupPoint(delivery);
     final dropoff = _dropoffPoint(delivery);
@@ -1961,29 +1930,17 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _isFetchingRoute = true;
 
     try {
-      final url = Uri.parse(
-        'https://maps.googleapis.com/maps/api/directions/json'
-        '?origin=${pickup.latitude},${pickup.longitude}'
-        '&destination=${dropoff.latitude},${dropoff.longitude}'
-        '&mode=driving&key=$googleMapsApiKey',
-      );
-      final response = await http.get(url).timeout(apiRequestTimeout);
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      final routes = data['routes'] as List<dynamic>?;
+      final route = await fetchRoadRoute([pickup, dropoff]);
 
-      if (routes == null || routes.isEmpty) return;
-
-      final encoded =
-          routes.first['overview_polyline']['points'] as String? ?? '';
-
-      if (!mounted || encoded.isEmpty) return;
+      if (!mounted || route == null || route.isEmpty) return;
 
       setState(() {
         _routeForDeliveryId = delivery['id'] as int;
-        _googleRoutePoints = _decodePolyline(encoded);
+        _googleRoutePoints =
+            route.map((p) => gmaps.LatLng(p.latitude, p.longitude)).toList();
       });
     } catch (_) {
-      // Leave the straight-line fallback in place if Directions fails.
+      // Leave the straight-line fallback in place if routing fails entirely.
     } finally {
       _isFetchingRoute = false;
     }
